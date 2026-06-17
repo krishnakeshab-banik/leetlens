@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LeetCode Tracker — Dashboard</title>
+<style>
+/* -- DESIGN TOKENS ----------------------------------------------- */
+:root {
+  --bg: #090e18;
+  --surface: #0f1623;
+  --surface2: #161e2e;
+  --border: #1e2d45;
+  --border2: #243552;
+  --accent: #f97316;
+  --accent-dim: rgba(249,115,22,.12);
+  --gold: #fbbf24;
+  --text: #dce8f5;
+  --muted: #647a96;
+  --easy: #4ade80;
+  --medium: #fbbf24;
+  --hard: #f87171;
+  --easy-bg: #052e16;
+  --medium-bg: #431407;
+  --hard-bg: #3f0808;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 4px 24px rgba(0,0,0,.4);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+/* -- NAV ---------------------------------------------------------- */
+nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 56px;
+  position: sticky; top: 0; z-index: 100;
+}
+.nav-logo {
+  display: flex; align-items: center; gap: 10px;
+  text-decoration: none; color: inherit;
+}
+.nav-logo-icon {
+  width: 34px; height: 34px;
+  background: linear-gradient(135deg, var(--accent), #c2410c);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 700;
+}
+.nav-logo-text { font-size: 16px; font-weight: 700; letter-spacing: -.3px; }
+.nav-logo-text span { color: var(--accent); }
+
+.nav-spacer { flex: 1; }
+.nav-actions { display: flex; gap: 12px; }
+
+.btn-clear {
+  background: transparent; border: 1px solid var(--border);
+  color: var(--muted); border-radius: var(--radius-sm);
+  padding: 6px 14px; font-size: 12px; cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+  font-weight: 500;
+}
+.btn-clear:hover { 
+  border-color: var(--hard); 
+  color: var(--hard);
+  background: rgba(248, 113, 113, .08);
+}
+
+/* -- LAYOUT ------------------------------------------------------- */
+main { max-width: 1200px; margin: 0 auto; padding: 28px 24px 60px; }
+
+h2.section-title {
+  font-size: 13px; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--muted); margin-bottom: 14px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+}
+h2.section-title .count {
+  background: var(--accent-dim); color: var(--accent);
+  font-size: 11px; padding: 1px 8px; border-radius: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* -- STATS GRID --------------------------------------------------- */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+
+.stat-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.stat-value {
+  font-size: 32px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.stat-card.easy { border-top: 3px solid var(--easy); }
+.stat-card.easy .stat-value { color: var(--easy); }
+
+.stat-card.medium { border-top: 3px solid var(--medium); }
+.stat-card.medium .stat-value { color: var(--medium); }
+
+.stat-card.hard { border-top: 3px solid var(--hard); }
+.stat-card.hard .stat-value { color: var(--hard); }
+
+.stat-card.total { border-top: 3px solid var(--accent); }
+.stat-card.total .stat-value { color: var(--accent); }
+
+.stat-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* -- PROBLEMS TABLE ----------------------------------------------- */
+.table-container {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.table-filters {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+}
+
+.filter-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.filter-btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.filter-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th {
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: .08em;
+  color: var(--muted);
+}
+
+td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+tr:hover {
+  background: var(--surface2);
+}
+
+.problem-num {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  width: 30px;
+}
+
+.problem-title {
+  font-weight: 500;
+  max-width: 350px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.problem-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status-solved {
+  background: rgba(74, 222, 128, .15);
+  color: var(--easy);
+}
+
+.status-pending {
+  background: rgba(249, 115, 22, .15);
+  color: var(--accent);
+}
+
+.difficulty-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.difficulty-Easy {
+  background: rgba(74, 222, 128, .15);
+  color: var(--easy);
+}
+
+.difficulty-Medium {
+  background: rgba(251, 191, 36, .15);
+  color: var(--medium);
+}
+
+.difficulty-Hard {
+  background: rgba(248, 113, 113, .15);
+  color: var(--hard);
+}
+
+.problem-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.problem-stars {
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+
+.problem-stars.filled {
+  color: var(--gold);
+}
+
+.problem-stars.empty {
+  color: var(--border);
+}
+
+.problem-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.action-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+}
+
+.action-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.action-btn.solved {
+  border-color: var(--easy);
+  color: var(--easy);
+}
+
+.action-btn.pending {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* -- EMPTY STATE -------------------------------------------------- */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+}
+
+.empty-state-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: .3;
+}
+
+.empty-state p {
+  margin-bottom: 8px;
+}
+
+/* -- RESPONSIVE --------------------------------------------------- */
+@media (max-width: 768px) {
+  nav {
+    padding: 0 16px;
+    height: 48px;
+  }
+  
+  .nav-logo-text { font-size: 14px; }
+  
+  main {
+    padding: 16px 12px 40px;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  table {
+    font-size: 12px;
+  }
+  
+  th, td {
+    padding: 10px 8px;
+  }
+  
+  .problem-title {
+    max-width: 200px;
+  }
+}
+
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="#" class="nav-logo">
+    <div class="nav-logo-icon">??</div>
+    <span class="nav-logo-text">LeetCode <span>Tracker</span></span>
+  </a>
+  <div class="nav-spacer"></div>
+  <div class="nav-actions">
+    <button class="btn-clear" id="btnClearAll">Clear All Data</button>
+  </div>
+</nav>
+
+<main>
+  <!-- Stats Grid -->
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card total">
+      <div class="stat-label">Total Problems</div>
+      <div class="stat-value" id="statTotal">0</div>
+    </div>
+    <div class="stat-card easy">
+      <div class="stat-label">Easy</div>
+      <div>
+        <div class="stat-value" id="statEasySolved">0</div>
+        <div class="stat-sub" id="statEasyTotal">of 0</div>
+      </div>
+    </div>
+    <div class="stat-card medium">
+      <div class="stat-label">Medium</div>
+      <div>
+        <div class="stat-value" id="statMediumSolved">0</div>
+        <div class="stat-sub" id="statMediumTotal">of 0</div>
+      </div>
+    </div>
+    <div class="stat-card hard">
+      <div class="stat-label">Hard</div>
+      <div>
+        <div class="stat-value" id="statHardSolved">0</div>
+        <div class="stat-sub" id="statHardTotal">of 0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Problems Table -->
+  <div>
+    <h2 class="section-title">
+      All Problems
+      <span class="count" id="problemsCount">0</span>
+    </h2>
+    
+    <div class="table-container">
+      <div class="table-filters">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="solved">? Solved</button>
+        <button class="filter-btn" data-filter="pending">? Pending</button>
+        <button class="filter-btn" data-filter="easy">Easy</button>
+        <button class="filter-btn" data-filter="medium">Medium</button>
+        <button class="filter-btn" data-filter="hard">Hard</button>
+      </div>
+      
+      <div id="problemsContent">
+        <div class="empty-state">
+          <div class="empty-state-icon">??</div>
+          <p>No problems tracked yet.</p>
+          <p style="font-size: 12px;">Open a LeetCode problem to start tracking!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="dashboard.js"></script>
+
+</body>
+</html>
