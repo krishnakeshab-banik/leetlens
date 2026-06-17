@@ -140,3 +140,12 @@ npx firebase functions:log --project automation-of-electricity
 
 **Build fails on Vercel**  
 → Ensure Node 18+ and all `VITE_*` env vars are set before deploy.
+
+**404 / MIME type errors for `lib/dashboard-*.js` or CSS on Vercel**  
+→ The `lib/` dashboard source files must be committed to git (only `lib/dashboard-bundle.js` and `lib/background-bundle.js` are build artifacts and stay gitignored). After pulling the latest `.gitignore`, run:
+```powershell
+git add lib/*.js lib/*.css chrome-shim.js
+git commit -m "Track dashboard lib sources for Vercel deploy"
+git push
+```
+Then redeploy on Vercel. The build runs `npm run prepare:web`, which copies `lib/` into `web/lib/` for hosting.

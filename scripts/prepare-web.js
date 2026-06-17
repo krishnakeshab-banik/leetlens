@@ -6,7 +6,18 @@ const webDir = path.join(root, 'web');
 
 const COPY_DIRS = ['lib', 'assets', 'data', 'icons'];
 const COPY_FILES = ['dashboard.html', 'dashboard.js', 'tailwind.css', 'input.css'];
-const LIB_FILES = ['dashboard-extension.js'];
+const REQUIRED_LIB_FILES = [
+  'dashboard-bundle.js',
+  'dashboard-cloud-ui.js',
+  'dashboard-heatmap.js',
+  'dashboard-striver.js',
+  'dashboard-plan.js',
+  'dashboard-analytics.js',
+  'dashboard-github.js',
+  'dashboard-extension.js',
+  'dashboard-developers.js',
+  'dashboard-enhanced.css'
+];
 
 function copyRecursive(src, dest) {
   if (!fs.existsSync(src)) return;
@@ -29,12 +40,17 @@ function patchDashboardHtml(content) {
 function main() {
   if (fs.existsSync(webDir)) {
     fs.readdirSync(webDir).forEach(name => {
-      if (name === 'chrome-shim.js' || name === 'index.html') return;
+      if (name === 'index.html') return;
       const p = path.join(webDir, name);
       fs.rmSync(p, { recursive: true, force: true });
     });
   } else {
     fs.mkdirSync(webDir, { recursive: true });
+  }
+
+  const shimSrc = path.join(root, 'chrome-shim.js');
+  if (fs.existsSync(shimSrc)) {
+    fs.copyFileSync(shimSrc, path.join(webDir, 'chrome-shim.js'));
   }
 
   COPY_DIRS.forEach(dir => copyRecursive(path.join(root, dir), path.join(webDir, dir)));
@@ -58,6 +74,14 @@ function main() {
 </body>
 </html>`;
   fs.writeFileSync(path.join(webDir, 'index.html'), indexHtml);
+
+  const missing = REQUIRED_LIB_FILES.filter(name => !fs.existsSync(path.join(webDir, 'lib', name)));
+  if (missing.length) {
+    console.error('Missing required web assets in lib/:');
+    missing.forEach(name => console.error(`  - ${name}`));
+    console.error('Ensure lib/ source files are committed to git (see .gitignore).');
+    process.exit(1);
+  }
 
   console.log('Web build prepared in web/');
 }

@@ -8,13 +8,20 @@ const libDir = path.join(root, 'lib');
 
 function loadEnv() {
   const env = {};
-  if (!fs.existsSync(envPath)) return env;
-  fs.readFileSync(envPath, 'utf8').split('\n').forEach(line => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) return;
-    const idx = trimmed.indexOf('=');
-    if (idx === -1) return;
-    env[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
+  if (fs.existsSync(envPath)) {
+    fs.readFileSync(envPath, 'utf8').split('\n').forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const idx = trimmed.indexOf('=');
+      if (idx === -1) return;
+      env[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
+    });
+  }
+  // Vercel injects VITE_* via process.env — prefer those over .env file
+  Object.entries(process.env).forEach(([key, value]) => {
+    if (value != null && value !== '' && (key.startsWith('VITE_') || key.startsWith('FIREBASE_'))) {
+      env[key] = value;
+    }
   });
   return env;
 }
