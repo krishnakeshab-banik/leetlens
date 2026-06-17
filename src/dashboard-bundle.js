@@ -3,6 +3,8 @@ import { initFirebase } from './firebase-init.js';
 import {
   getUserProfile,
   handleGoogleRedirectResult,
+  isAuthCallbackUrl,
+  isPendingAuthRedirect,
   requireAuthUser,
   signInWithGoogle,
   signUpWithGoogle,
@@ -88,16 +90,26 @@ export async function initCloud() {
   initFirebase();
   if (authUnsubscribe) authUnsubscribe();
 
+  let redirectError = null;
   try {
-    await handleGoogleRedirectResult();
+    const redirectUser = await handleGoogleRedirectResult();
+    if (redirectUser) {
+      setState({ user: toCloudUser(redirectUser), loading: true, error: null });
+      try {
+        await loadCloudData(redirectUser.uid);
+        setState({ loading: false });
+      } catch (err) {
+        setState({ loading: false, error: err.message });
+      }
+    }
   } catch (err) {
+    redirectError = err.message;
     setState({ loading: false, error: err.message });
-    return cloudState;
   }
 
   authUnsubscribe = watchAuthState(async ({ user, error }) => {
     if (error) {
-      setState({ user: null, loading: false, error: error.message });
+      setState({ user: null, loading: false, error: error.message || redirectError });
       return;
     }
     if (user) {
@@ -110,7 +122,7 @@ export async function initCloud() {
       }
       setState({ loading: false });
     } else {
-      setState({ user: null, profile: null, stats: null, loading: false, error: null });
+      setState({ user: null, profile: null, stats: null, loading: false, error: redirectError });
     }
   });
 
@@ -497,7 +509,9 @@ const LeetLensCloudAPI = {
   markWeeklyProblemComplete,
   onProblemSolved,
   validateUsername,
-  isFirebaseConfigured
+  isFirebaseConfigured,
+  isPendingAuthRedirect,
+  isAuthCallbackUrl
 };
 
 window.LeetLensCloud = LeetLensCloudAPI;

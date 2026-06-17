@@ -16,6 +16,38 @@ import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { getFirebaseAuth, getDb } from './firebase-init.js';
 
 const AUTH_STORAGE_KEY = 'leetlensAuth';
+const PENDING_REDIRECT_KEY = 'leetlensPendingAuthRedirect';
+let redirectResultHandled = false;
+
+export function isPendingAuthRedirect() {
+  try {
+    return sessionStorage.getItem(PENDING_REDIRECT_KEY) === '1';
+  } catch (_) {
+    return false;
+  }
+}
+
+export function isAuthCallbackUrl() {
+  if (typeof window === 'undefined') return false;
+  const { search, hash } = window.location;
+  return /[?&]apiKey=/.test(search)
+    || /[?&]authType=/.test(search)
+    || /[?&]code=/.test(search)
+    || /[?&]state=/.test(search)
+    || /(?:^|[?#&])apiKey=/.test(hash);
+}
+
+function markPendingRedirect() {
+  try {
+    sessionStorage.setItem(PENDING_REDIRECT_KEY, '1');
+  } catch (_) {}
+}
+
+function clearPendingRedirect() {
+  try {
+    sessionStorage.removeItem(PENDING_REDIRECT_KEY);
+  } catch (_) {}
+}
 
 export function formatAuthError(err) {
   const code = err?.code || '';
@@ -34,7 +66,9 @@ export function formatAuthError(err) {
     'auth/email-already-in-use': 'An account with this email already exists. Try signing in.',
     'auth/weak-password': 'Password is too weak. Use at least 6 characters.',
     'auth/invalid-email': 'Please enter a valid email address.',
-    'auth/too-many-requests': 'Too many attempts. Wait a moment and try again.'
+    'auth/too-many-requests': 'Too many attempts. Wait a moment and try again.',
+    'auth/missing-or-invalid-nonce': 'Sign-in session expired. Please try again. If this keeps happening on iPhone, disable private browsing or use Safari settings → allow cross-site tracking for this site.',
+    'auth/web-storage-unsupported': 'This browser blocks sign-in storage. Disable private browsing or try a different browser.'
   };
 
   if (map[code]) return map[code];
@@ -56,8 +90,12 @@ async function ensureAuthPersistence(auth) {
 
 function isMobileBrowser() {
   if (typeof window === 'undefined') return false;
-  return window.matchMedia('(max-width: 1023px)').matches
-    || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+    || (window.matchMedia('(max-width: 1023px)').matches && 'ontouchstart' in window);
+}
+
+function shouldPreferRedirect() {
+  return isMobileBrowser() || isPendingAuthRedirect() || isAuthCallbackUrl();
 }
 
 function createGoogleProvider() {
@@ -70,16 +108,31 @@ function createGoogleProvider() {
 
 /** Call on app load to complete signInWithRedirect flows. */
 export async function handleGoogleRedirectResult() {
+  if (redirectResultHandled) return null;
+  redirectResultHandled = true;
+
   const auth = getFirebaseAuth();
   await ensureAuthPersistence(auth);
   try {
     const result = await getRedirectResult(auth);
     if (result?.user) {
+      clearPendingRedirect();
       return completeSignIn(result.user);
     }
+    if (auth.currentUser && (isPendingAuthRedirect() || isAuthCallbackUrl())) {
+      clearPendingRedirect();
+      return completeSignIn(auth.currentUser);
+    }
   } catch (err) {
+    clearPendingRedirect();
     throw new Error(formatAuthError(err));
   }
+  return null;
+}
+
+async function signInWithGoogleRedirect(auth, provider) {
+  markPendingRedirect();
+  await signInWithRedirect(auth, provider);
   return null;
 }
 
@@ -88,18 +141,19 @@ async function signInWithGoogleFirebase() {
   await ensureAuthPersistence(auth);
   const provider = createGoogleProvider();
 
-  if (isMobileBrowser()) {
-    await signInWithRedirect(auth, provider);
-    return null;
+  if (shouldPreferRedirect()) {
+    return signInWithGoogleRedirect(auth, provider);
   }
 
   try {
     const result = await signInWithPopup(auth, provider);
     return result.user;
   } catch (err) {
-    if (err?.code === 'auth/popup-blocked') {
-      await signInWithRedirect(auth, provider);
-      return null;
+    const useRedirect = err?.code === 'auth/popup-blocked'
+      || err?.code === 'auth/cancelled-popup-request'
+      || err?.code === 'auth/operation-not-supported-in-this-environment';
+    if (useRedirect) {
+      return signInWithGoogleRedirect(auth, provider);
     }
     throw err;
   }
