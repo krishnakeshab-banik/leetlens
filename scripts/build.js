@@ -32,9 +32,6 @@ Object.entries(env).forEach(([key, value]) => {
   define[`process.env.${key}`] = JSON.stringify(value);
 });
 
-define['__OAUTH_CONFIGURED__'] = JSON.stringify(Boolean(env.VITE_GOOGLE_OAUTH_CLIENT_ID || env.VITE_CHROME_OAUTH_CLIENT_ID));
-define['__GOOGLE_OAUTH_CLIENT_ID__'] = JSON.stringify(env.VITE_GOOGLE_OAUTH_CLIENT_ID || env.VITE_CHROME_OAUTH_CLIENT_ID || '');
-
 const firebaseConfig = {
   apiKey: env.VITE_FIREBASE_API_KEY || '',
   authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || '',
@@ -76,9 +73,8 @@ async function run() {
     console.log(`Built ${b.outfile}`);
   }
 
-  // Web OAuth uses launchWebAuthFlow — no manifest oauth2 patch needed
-  if (!env.VITE_GOOGLE_OAUTH_CLIENT_ID && !env.VITE_CHROME_OAUTH_CLIENT_ID) {
-    console.warn('VITE_GOOGLE_OAUTH_CLIENT_ID not set — Google Sign-In will not work until configured');
+  if (!env.VITE_FIREBASE_API_KEY || !env.VITE_FIREBASE_PROJECT_ID) {
+    console.warn('VITE_FIREBASE_* vars not set — cloud sign-in will not work until configured');
   }
 }
 

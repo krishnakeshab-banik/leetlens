@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LeetCode Time Tracker",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "description": "Track time spent on each LeetCode problem with star ratings",
   "permissions": [
     "storage",

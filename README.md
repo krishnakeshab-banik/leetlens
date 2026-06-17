@@ -164,12 +164,11 @@ VITE_FIREBASE_STORAGE_BUCKET=
 VITE_FIREBASE_MESSAGING_SENDER_ID=
 VITE_FIREBASE_APP_ID=
 VITE_FIREBASE_MEASUREMENT_ID=
-
-# Google OAuth — Web Application client ID (not the client secret)
-VITE_GOOGLE_OAUTH_CLIENT_ID=your_id.apps.googleusercontent.com
 ```
 
 These are compiled into `lib/dashboard-bundle.js` at build time. **Never commit `.env`** — it is gitignored.
+
+Google Sign-In uses **Firebase Authentication only** — no separate OAuth client ID is required in `.env`. Enable Google in Firebase Console → Authentication → Sign-in method.
 
 For Vercel, set the same `VITE_*` variables in **Project → Settings → Environment Variables**, then redeploy.
 
@@ -200,7 +199,7 @@ npm install
 
 # 2. Configure cloud (optional)
 cp .env.example .env
-# Edit .env with your Firebase + OAuth credentials
+# Edit .env with your Firebase credentials
 
 # 3. Build
 npm run build
@@ -316,10 +315,9 @@ npx firebase deploy --only functions
 **Firebase Console setup:**
 
 - Enable **Google** + **Email/Password** authentication
-- Add authorized domains: your Vercel URL, `chrome-extension://YOUR_EXTENSION_ID`
-- Google OAuth redirect URIs: Vercel URL + `https://EXTENSION_ID.chromiumapp.org/`
+- Add authorized domains: your Vercel URL (e.g. `leetlens.srminsider.in`), `localhost` for dev, and `chrome-extension://YOUR_EXTENSION_ID` for the extension dashboard
 
-For the complete step-by-step guide (OAuth, Resend email secrets, troubleshooting), see **[DEPLOY.md](./DEPLOY.md)**.
+For the complete step-by-step guide (Firebase auth, Resend email secrets, troubleshooting), see **[DEPLOY.md](./DEPLOY.md)**.
 
 ---
 
@@ -411,7 +409,7 @@ leetcode-extension-main/
 | LeetCode link fails with "Failed to fetch" (web) | Redeploy Vercel so `api/leetcode.js` is live |
 | GitHub link fails (web) | Ensure `api/github.js` is deployed |
 | "Missing or insufficient permissions" | Deploy Firestore rules: `npx firebase deploy --only firestore:rules` |
-| Google sign-in fails on Vercel | Add Vercel domain to Firebase authorized domains + OAuth redirect URIs |
+| Google sign-in fails | Enable Google in Firebase Console → Authentication → Sign-in method; add your domain under Authorized domains. Remove any `VITE_GOOGLE_OAUTH_CLIENT_ID` from env vars — the app uses Firebase-managed Google auth only. |
 | 404 for `lib/dashboard-*.js` on Vercel | Commit `lib/*.js` sources to git (see DEPLOY.md) |
 | Emails not sending | Check Resend API key and Firebase Functions logs |
 

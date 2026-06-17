@@ -10,14 +10,6 @@ export const firebaseConfig = typeof __FIREBASE_CONFIG__ !== 'undefined'
       measurementId: process.env.VITE_FIREBASE_MEASUREMENT_ID
     };
 
-export const googleOAuthClientId = typeof __GOOGLE_OAUTH_CLIENT_ID__ !== 'undefined'
-  ? __GOOGLE_OAUTH_CLIENT_ID__
-  : (process.env.VITE_GOOGLE_OAUTH_CLIENT_ID || process.env.VITE_CHROME_OAUTH_CLIENT_ID || '');
-
 export function isFirebaseConfigured() {
   return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
-}
-
-export function isOAuthConfigured() {
-  return Boolean(googleOAuthClientId);
 }

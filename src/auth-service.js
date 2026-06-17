@@ -1,9 +1,11 @@
 import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
+  getRedirectResult,
   onAuthStateChanged,
-  signInWithCredential,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
   signOut,
   setPersistence,
   browserLocalPersistence,
@@ -12,36 +14,33 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { getFirebaseAuth, getDb } from './firebase-init.js';
-import { googleOAuthClientId, isOAuthConfigured } from './config.js';
 
 const AUTH_STORAGE_KEY = 'leetlensAuth';
-
-function createNonce() {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-}
 
 export function formatAuthError(err) {
   const code = err?.code || '';
   const msg = err?.message || String(err);
 
   const map = {
-    'auth/internal-error': 'Firebase auth failed. Ensure Email/Password & Google are enabled in Firebase Console, add chrome-extension://YOUR_ID to Authorized domains, and use the same Web Client ID in Firebase Google provider settings.',
-    'auth/invalid-credential': 'Invalid credentials. For Google sign-in, verify your OAuth Web Client ID matches Firebase → Authentication → Google → Web SDK configuration.',
-    'auth/operation-not-allowed': 'This sign-in method is disabled. Enable it in Firebase Console → Authentication → Sign-in method.',
+    'auth/internal-error': 'Firebase authentication failed. Enable Google sign-in in Firebase Console and add this app domain under Authorized domains.',
+    'auth/invalid-credential': 'Google sign-in failed. Ensure Google is enabled in Firebase Console → Authentication → Sign-in method, and that this domain is authorized.',
+    'auth/operation-not-allowed': 'Google sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in method → Google.',
+    'auth/popup-blocked': 'Sign-in popup was blocked. Allow popups for this site or try again — we will use redirect sign-in automatically when blocked.',
+    'auth/popup-closed-by-user': 'Sign-in cancelled.',
+    'auth/network-request-failed': 'Network error. Check your connection and try again.',
+    'auth/unauthorized-domain': 'This domain is not authorized for Firebase Auth. Add it in Firebase Console → Authentication → Settings → Authorized domains.',
     'auth/user-not-found': 'No account found with this email. Try signing up instead.',
     'auth/wrong-password': 'Incorrect password. Please try again.',
     'auth/email-already-in-use': 'An account with this email already exists. Try signing in.',
     'auth/weak-password': 'Password is too weak. Use at least 6 characters.',
     'auth/invalid-email': 'Please enter a valid email address.',
-    'auth/too-many-requests': 'Too many attempts. Wait a moment and try again.',
-    'auth/network-request-failed': 'Network error. Check your connection and reload the extension.'
+    'auth/too-many-requests': 'Too many attempts. Wait a moment and try again.'
   };
 
   if (map[code]) return map[code];
-  if (msg.includes('redirect_uri_mismatch')) return `OAuth redirect mismatch. Add this URI in Google Cloud Console:\n${getOAuthRedirectUri()}`;
-  if (msg.includes('auth/internal-error')) return map['auth/internal-error'];
+  if (msg.includes('INVALID_IDP_RESPONSE') || msg.includes('audience')) {
+    return 'Google sign-in must use Firebase Authentication only. Enable Google in Firebase Console and remove any custom OAuth client configuration from this app.';
+  }
   return msg.replace(/^Firebase:\s*/i, '').replace(/^Error\s*\([^)]+\)\.\s*/i, '');
 }
 
@@ -55,86 +54,55 @@ async function ensureAuthPersistence(auth) {
   }
 }
 
-export function getOAuthRedirectUri() {
-  return chrome.identity.getRedirectURL();
+function isMobileBrowser() {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(max-width: 1023px)').matches
+    || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
 
-export function getOAuthSetupInfo() {
-  return {
-    clientId: googleOAuthClientId,
-    redirectUri: getOAuthRedirectUri(),
-    configured: isOAuthConfigured()
-  };
+function createGoogleProvider() {
+  const provider = new GoogleAuthProvider();
+  provider.addScope('email');
+  provider.addScope('profile');
+  provider.setCustomParameters({ prompt: 'select_account' });
+  return provider;
 }
 
-function parseOAuthResponse(responseUrl) {
-  const hash = new URL(responseUrl).hash.replace(/^#/, '');
-  const params = new URLSearchParams(hash);
-  if (params.get('error')) {
-    throw new Error(params.get('error_description') || params.get('error'));
-  }
-  return {
-    idToken: params.get('id_token'),
-    accessToken: params.get('access_token')
-  };
-}
-
-function getGoogleCredentialViaWebAuthFlow() {
-  return new Promise((resolve, reject) => {
-    if (!isOAuthConfigured()) {
-      reject(new Error('Google OAuth client ID missing in .env'));
-      return;
-    }
-
-    const redirectUri = getOAuthRedirectUri();
-    const nonce = createNonce();
-    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    authUrl.searchParams.set('client_id', googleOAuthClientId);
-    authUrl.searchParams.set('response_type', 'id_token token');
-    authUrl.searchParams.set('redirect_uri', redirectUri);
-    authUrl.searchParams.set('scope', 'openid email profile');
-    authUrl.searchParams.set('nonce', nonce);
-    authUrl.searchParams.set('prompt', 'select_account');
-
-    chrome.identity.launchWebAuthFlow({ url: authUrl.toString(), interactive: true }, responseUrl => {
-      if (chrome.runtime.lastError) {
-        const raw = chrome.runtime.lastError.message || 'Google sign-in failed';
-        if (raw.includes('redirect_uri_mismatch') || raw.includes('Authorization page could not be loaded')) {
-          reject(new Error(`Add this redirect URI in Google Cloud Console:\n${redirectUri}`));
-        } else if (raw.includes('OAuth2') || raw.includes('canceled')) {
-          reject(new Error('Sign-in cancelled'));
-        } else {
-          reject(new Error(raw));
-        }
-        return;
-      }
-      if (!responseUrl) {
-        reject(new Error('Sign-in cancelled'));
-        return;
-      }
-
-      try {
-        const { idToken, accessToken } = parseOAuthResponse(responseUrl);
-        if (idToken) {
-          resolve(GoogleAuthProvider.credential(idToken));
-        } else if (accessToken) {
-          resolve(GoogleAuthProvider.credential(null, accessToken));
-        } else {
-          reject(new Error('No token received from Google. Check OAuth client configuration.'));
-        }
-      } catch (err) {
-        reject(err);
-      }
-    });
-  });
-}
-
-async function signInWithGoogleWebAuthFlow() {
+/** Call on app load to complete signInWithRedirect flows. */
+export async function handleGoogleRedirectResult() {
   const auth = getFirebaseAuth();
   await ensureAuthPersistence(auth);
-  const credential = await getGoogleCredentialViaWebAuthFlow();
-  const result = await signInWithCredential(auth, credential);
-  return result.user;
+  try {
+    const result = await getRedirectResult(auth);
+    if (result?.user) {
+      return completeSignIn(result.user);
+    }
+  } catch (err) {
+    throw new Error(formatAuthError(err));
+  }
+  return null;
+}
+
+async function signInWithGoogleFirebase() {
+  const auth = getFirebaseAuth();
+  await ensureAuthPersistence(auth);
+  const provider = createGoogleProvider();
+
+  if (isMobileBrowser()) {
+    await signInWithRedirect(auth, provider);
+    return null;
+  }
+
+  try {
+    const result = await signInWithPopup(auth, provider);
+    return result.user;
+  } catch (err) {
+    if (err?.code === 'auth/popup-blocked') {
+      await signInWithRedirect(auth, provider);
+      return null;
+    }
+    throw err;
+  }
 }
 
 async function upsertUserDoc(user) {
@@ -170,7 +138,9 @@ async function completeSignIn(user) {
 
 export async function signInWithGoogle() {
   try {
-    return await completeSignIn(await signInWithGoogleWebAuthFlow());
+    const user = await signInWithGoogleFirebase();
+    if (!user) return null;
+    return await completeSignIn(user);
   } catch (err) {
     throw new Error(formatAuthError(err));
   }
@@ -280,7 +250,7 @@ export function wrapFirestoreError(err) {
   const code = err?.code || '';
   if (code === 'permission-denied') {
     throw new Error(
-      'Missing or insufficient permissions. Sign out, sign in again, then deploy Firestore rules: npx firebase deploy --only firestore:rules --project automation-of-electricity'
+      'Missing or insufficient permissions. Sign out, sign in again, then deploy Firestore rules.'
     );
   }
   return err;

@@ -1,9 +1,8 @@
-import { isFirebaseConfigured, isOAuthConfigured } from './config.js';
+import { isFirebaseConfigured } from './config.js';
 import { initFirebase } from './firebase-init.js';
 import {
   getUserProfile,
-  getOAuthRedirectUri,
-  getOAuthSetupInfo,
+  handleGoogleRedirectResult,
   requireAuthUser,
   signInWithGoogle,
   signUpWithGoogle,
@@ -89,6 +88,13 @@ export async function initCloud() {
   initFirebase();
   if (authUnsubscribe) authUnsubscribe();
 
+  try {
+    await handleGoogleRedirectResult();
+  } catch (err) {
+    setState({ loading: false, error: err.message });
+    return cloudState;
+  }
+
   authUnsubscribe = watchAuthState(async ({ user, error }) => {
     if (error) {
       setState({ user: null, loading: false, error: error.message });
@@ -125,6 +131,9 @@ export async function login() {
   setState({ loading: true, error: null });
   try {
     const user = await signInWithGoogle();
+    if (!user) {
+      return null;
+    }
     await loadCloudData(user.uid);
     setState({ user: toCloudUser(user), loading: false });
     return user;
@@ -488,10 +497,7 @@ const LeetLensCloudAPI = {
   markWeeklyProblemComplete,
   onProblemSolved,
   validateUsername,
-  isFirebaseConfigured,
-  isOAuthConfigured,
-  getOAuthRedirectUri,
-  getOAuthSetupInfo
+  isFirebaseConfigured
 };
 
 window.LeetLensCloud = LeetLensCloudAPI;

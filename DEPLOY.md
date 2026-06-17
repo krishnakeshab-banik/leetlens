@@ -36,21 +36,20 @@ Use `EMAIL_FROM` like: `LeetLens <noreply@yourdomain.com>` (domain must be verif
 ### 4. Firebase Console checklist
 
 - **Authentication** → Enable Google + Email/Password
-- **Authentication** → Authorized domains → add your Vercel domain (e.g. `leetlens.vercel.app`)
-- **Authentication** → Google provider → use the same Web Client ID as in `.env`
+- **Authentication** → Settings → **Authorized domains** → add your Vercel domain (e.g. `leetlens.srminsider.in`) and `localhost` for local dev
+- **Authentication** → Sign-in method → **Google** → ensure the provider is enabled (Firebase manages the OAuth client automatically)
 
-### 5. Google Cloud OAuth (for web dashboard)
+### 5. Custom domain example (`leetlens.srminsider.in`)
 
-In [Google Cloud Console](https://console.cloud.google.com/) → APIs & Credentials → OAuth 2.0 Client:
+| Where | What to add |
+|-------|-------------|
+| Firebase → Auth → **Authorized domains** | `leetlens.srminsider.in` |
+| Firebase → Auth → Sign-in method → **Google** | Enabled |
 
-Add **Authorized JavaScript origins**:
-- `https://YOUR-VERCEL-DOMAIN.vercel.app`
+For the Chrome extension dashboard, also add:
+- Firebase → Auth → **Authorized domains** → `chrome-extension://YOUR_EXTENSION_ID`
 
-Add **Authorized redirect URIs**:
-- `https://YOUR-VERCEL-DOMAIN.vercel.app/`
-
-For the Chrome extension, also keep:
-- `https://EXTENSION_ID.chromiumapp.org/`
+Wait 2–5 minutes after saving, then hard-refresh the dashboard and try Google sign-in again.
 
 ---
 
@@ -91,9 +90,8 @@ Copy from your `.env`:
 | `VITE_FIREBASE_STORAGE_BUCKET` | `automation-of-electricity.appspot.com` |
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | `...` |
 | `VITE_FIREBASE_APP_ID` | `...` |
-| `VITE_GOOGLE_OAUTH_CLIENT_ID` | `....apps.googleusercontent.com` |
 
-> Re-run deploy after adding env vars so `npm run build` embeds them in `lib/dashboard-bundle.js`.
+> Re-run deploy after adding env vars so `npm run build` embeds Firebase config in `lib/dashboard-bundle.js`. Do **not** set `VITE_GOOGLE_OAUTH_CLIENT_ID` — Google sign-in uses Firebase Authentication only.
 
 ### 5. Deploy
 
@@ -106,8 +104,8 @@ Click **Deploy**. Your dashboard will be live at `https://your-project.vercel.ap
 The extension still provides **LeetCode sidebar tracking**. Load unpacked from `leetcode-extension-main` after `npm run build`.
 
 1. `chrome://extensions` → Developer mode → Load unpacked
-2. Add `chrome-extension://YOUR_EXTENSION_ID` to Firebase Authorized domains
-3. Add `https://YOUR_EXTENSION_ID.chromiumapp.org/` to Google OAuth redirect URIs
+2. Add `chrome-extension://YOUR_EXTENSION_ID` to Firebase → Authentication → Authorized domains
+3. Ensure Google sign-in is enabled in Firebase Console (no separate OAuth client ID in `.env`)
 
 ---
 
@@ -129,8 +127,11 @@ The extension still provides **LeetCode sidebar tracking**. Load unpacked from `
 **"Missing or insufficient permissions"** when linking LeetCode/GitHub  
 → Deploy Firestore rules (Part 1, step 1).
 
-**Google sign-in fails on Vercel**  
-→ Add Vercel URL to Firebase authorized domains and Google OAuth redirect URIs.
+**Google sign-in fails / `INVALID_IDP_RESPONSE` / `unauthorized-domain`**  
+→ Firebase Console → Authentication → Sign-in method → enable **Google**  
+→ Firebase → Authentication → Settings → **Authorized domains** → add your web domain (e.g. `leetlens.srminsider.in`) and `chrome-extension://YOUR_EXTENSION_ID` for the extension  
+→ Remove `VITE_GOOGLE_OAUTH_CLIENT_ID` from Vercel/local `.env` if still set — the app no longer uses a custom OAuth client  
+→ Rebuild (`npm run build`) and redeploy so bundles use the Firebase `signInWithPopup` / `signInWithRedirect` flow
 
 **Emails not sending**  
 → Check Resend API key, verified sender domain, and Firebase Functions logs:

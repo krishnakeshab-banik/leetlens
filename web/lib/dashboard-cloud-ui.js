@@ -28,27 +28,6 @@
     }
   }
 
-  function oauthReady() {
-    try {
-      const fn = cloud()?.isOAuthConfigured;
-      return typeof fn === 'function' ? fn() : false;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  function getRedirectUri() {
-    try {
-      const fn = cloud()?.getOAuthRedirectUri;
-      if (typeof fn === 'function') return fn();
-    } catch (_) {}
-    try {
-      return chrome.identity.getRedirectURL();
-    } catch (_) {
-      return '';
-    }
-  }
-
   function escapeHtml(str) {
     return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
@@ -159,26 +138,22 @@
     });
   }
 
-  function oauthSetupHtml() {
-    if (!oauthReady()) {
-      return `
-        <div class="auth-status error">
-          <p class="font-semibold">Google OAuth client ID missing</p>
-          <p class="mt-1">Add Web Application client ID to <code>.env</code> as <code>VITE_GOOGLE_OAUTH_CLIENT_ID</code>, run <code>npm run build</code>, reload extension.</p>
-        </div>`;
-    }
-    const info = (typeof cloud().getOAuthSetupInfo === 'function'
-      ? cloud().getOAuthSetupInfo()
-      : { redirectUri: getRedirectUri(), configured: oauthReady() });
-    const uri = escapeHtml(info.redirectUri || getRedirectUri());
+  function firebaseAuthHelpHtml() {
+    if (!firebaseReady()) return '';
+    const isWeb = Boolean(window.__LEETLENS_WEB__);
+    const domainHint = isWeb
+      ? escapeHtml(window.location.hostname)
+      : 'chrome-extension://YOUR_EXTENSION_ID';
     return `
-      <button type="button" id="authSetupToggle" class="auth-setup-toggle">⚙ OAuth setup (one-time) — click to expand</button>
+      <button type="button" id="authSetupToggle" class="auth-setup-toggle">⚙ Google sign-in setup — click to expand</button>
       <div id="authSetupPanel" class="auth-setup-panel">
-        <p>Add this <strong>Authorized redirect URI</strong> in Google Cloud Console → OAuth client:</p>
-        <code>${uri}</code>
-        <p class="mt-2">In Firebase → Authentication → Settings → Authorized domains, add:</p>
-        <code>chrome-extension://YOUR_EXTENSION_ID</code>
-        <p class="mt-2 text-[10px]">Open dashboard via extension popup (chrome-extension://), not localhost.</p>
+        <p>Google Sign-In uses <strong>Firebase Authentication</strong> only — no OAuth client ID is configured in this app.</p>
+        <p class="mt-2">In <strong>Firebase Console</strong> → Authentication:</p>
+        <ul class="mt-2 space-y-1 text-[11px] list-disc ml-4">
+          <li>Enable <strong>Google</strong> under Sign-in method</li>
+          <li>Add <code>${domainHint}</code> under Settings → <strong>Authorized domains</strong></li>
+        </ul>
+        <p class="mt-2 text-[10px]">Firebase manages the Google OAuth client automatically. Do not use a separate client ID in <code>.env</code>.</p>
       </div>`;
   }
 
@@ -191,8 +166,13 @@
       const originalHtml = btn?.innerHTML;
       if (btn) { btn.disabled = true; btn.innerHTML = '<span>Signing in…</span>'; }
       try {
-        if (authMode === 'signup' && cloud().signUpGoogle) await cloud().signUpGoogle();
-        else await cloud().login();
+        const signInFn = authMode === 'signup' && cloud().signUpGoogle
+          ? cloud().signUpGoogle.bind(cloud())
+          : cloud().login.bind(cloud());
+        const user = await signInFn();
+        if (!user) {
+          return;
+        }
         window.switchView?.('profile');
       } catch (err) {
         if (btn) { btn.disabled = false; btn.innerHTML = originalHtml; }
@@ -354,7 +334,7 @@
 
           <div class="auth-divider"><span>or continue with</span></div>
 
-          <button type="button" id="btnGoogleAuth" class="auth-btn-google" ${oauthReady() ? '' : 'disabled'}>
+          <button type="button" id="btnGoogleAuth" class="auth-btn-google" ${firebaseReady() ? '' : 'disabled'}>
             ${GOOGLE_BTN_HTML}
             <span>${isSignUp ? 'Sign up with Google' : 'Sign in with Google'}</span>
           </button>
@@ -364,7 +344,7 @@
             : 'New here? <button type="button" id="authFooterSwitchSignUp" class="auth-link-btn">Create an account</button>'}</p>
 
           ${state.error ? `<div class="auth-status error">${escapeHtml(state.error)}</div>` : ''}
-          ${oauthSetupHtml()}
+          ${firebaseAuthHelpHtml()}
         </div>
       </div>`;
 

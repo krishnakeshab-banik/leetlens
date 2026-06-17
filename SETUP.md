@@ -28,29 +28,22 @@ firebase use automation-of-electricity
 firebase deploy --only firestore:rules,firestore:indexes
 ```
 
-### Google Sign-In (Web Application OAuth — no Chrome Store required)
+### Google Sign-In (Firebase Authentication)
 
-Chrome Extension OAuth clients often require Chrome Web Store publication. **Use a Web Application client instead** with `chrome.identity.launchWebAuthFlow`.
+Google Sign-In uses the **Firebase SDK** (`GoogleAuthProvider` + `signInWithPopup` / `signInWithRedirect`). No OAuth client ID is configured in this app.
 
-1. [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → your project
-2. Use existing **Web application** OAuth 2.0 Client ID (or create one)
-3. Load the unpacked extension in Chrome → copy **Extension ID** from `chrome://extensions`
-4. Open Dashboard → **Sign In** — copy the **Authorized redirect URI** shown on the page
-   - Format: `https://YOUR_EXTENSION_ID.chromiumapp.org/`
-5. In Google Cloud Console → Web client → **Authorized redirect URIs** → add that exact URI
-6. Add client ID to `.env` (client secret is NOT needed in the extension):
-
-```
-VITE_GOOGLE_OAUTH_CLIENT_ID=your_web_client_id.apps.googleusercontent.com
-```
-
-7. Rebuild and reload:
+1. [Firebase Console](https://console.firebase.google.com/) → your project → **Authentication**
+2. **Sign-in method** → enable **Google**
+3. **Settings** → **Authorized domains** → add:
+   - Your web dashboard domain (e.g. `leetlens.srminsider.in`)
+   - `chrome-extension://YOUR_EXTENSION_ID` (load unpacked extension in Chrome → copy ID from `chrome://extensions`)
+4. Copy Firebase config into `.env` (see below) and rebuild:
 
 ```bash
 npm run build
 ```
 
-**Never** put the OAuth client secret in the extension or `.env` — it is not used for this flow.
+**Never** put an OAuth client secret in the extension or `.env`.
 
 ---
 
@@ -66,7 +59,6 @@ VITE_FIREBASE_STORAGE_BUCKET=...
 VITE_FIREBASE_MESSAGING_SENDER_ID=...
 VITE_FIREBASE_APP_ID=...
 VITE_FIREBASE_MEASUREMENT_ID=...
-VITE_CHROME_OAUTH_CLIENT_ID=...
 ```
 
 Build bundles:
@@ -191,8 +183,9 @@ firebase deploy      # Deploy rules + functions
 ## 8. Troubleshooting
 
 **Sign-in fails**
-- Verify `VITE_CHROME_OAUTH_CLIENT_ID` matches Chrome Extension OAuth client
-- Extension ID must match the OAuth client configuration
+- Enable Google in Firebase Console → Authentication → Sign-in method
+- Add your domain and `chrome-extension://YOUR_EXTENSION_ID` to Firebase Authorized domains
+- Run `npm run build` and reload the extension; remove any `VITE_GOOGLE_OAUTH_CLIENT_ID` from `.env`
 
 **Sync fails**
 - Link LeetCode username first
