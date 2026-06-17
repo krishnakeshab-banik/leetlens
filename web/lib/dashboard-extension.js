@@ -9,8 +9,7 @@
   function el(id) { return document.getElementById(id); }
 
   function isMobile() {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-      || (window.innerWidth < 768 && 'ontouchstart' in window);
+    return window.matchMedia('(max-width: 1023px)').matches;
   }
 
   function isExtensionContext() {
@@ -78,20 +77,13 @@
     const container = el('extensionContent');
     if (!container) return;
 
-    const mobile = isMobile();
-    const status = await getExtensionStatus();
-
-    if (mobile) {
-      container.innerHTML = `
-        <div class="ext-status-card ext-mobile-notice">
-          <span class="material-symbols-outlined ext-status-icon warn">smartphone</span>
-          <h2 class="ext-status-title">Desktop Chrome Required</h2>
-          <p class="ext-status-desc">The LeetLens Chrome extension only works on desktop Chrome, Brave, or Edge. It cannot be installed on phones or tablets.</p>
-          <p class="ext-status-desc mt-3">You can still use this dashboard on mobile for cloud sync, analytics, and planning — but live LeetCode tracking requires the desktop extension.</p>
-          <a href="${STORE_URL}" target="_blank" rel="noopener" class="ext-install-btn secondary mt-4">View on Chrome Web Store</a>
-        </div>`;
+    if (isMobile()) {
+      container.innerHTML = '';
+      window.switchView?.('overview');
       return;
     }
+
+    const status = await getExtensionStatus();
 
     if (status.mode === 'active') {
       container.innerHTML = `

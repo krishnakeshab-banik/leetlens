@@ -40,7 +40,16 @@ const VIEW_TITLES = {
   extension: 'Extension'
 };
 
+const DESKTOP_ONLY_VIEWS = ['extension'];
+
+function isMobileViewport() {
+  return window.matchMedia('(max-width: 1023px)').matches;
+}
+
 function switchView(viewId) {
+  if (DESKTOP_ONLY_VIEWS.includes(viewId) && isMobileViewport()) {
+    viewId = 'overview';
+  }
   if (currentView === viewId) {
     closeSidebar();
     return;
@@ -927,6 +936,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('sidebarOverlay')?.addEventListener('click', closeSidebar);
   window.addEventListener('resize', () => {
     if (window.innerWidth >= 1024) closeSidebar();
+    if (isMobileViewport() && currentView === 'extension') switchView('overview');
   });
 
   // ── Nav view switching ──
