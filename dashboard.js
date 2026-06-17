@@ -46,6 +46,12 @@ function isMobileViewport() {
   return window.matchMedia('(max-width: 1023px)').matches;
 }
 
+function isAuthCallbackUrl() {
+  const { search, hash } = window.location;
+  return /[?&](apiKey|authType|code|state)=/.test(search)
+    || /(?:^|[?#&])(apiKey|authType)=/.test(hash);
+}
+
 function switchView(viewId) {
   if (DESKTOP_ONLY_VIEWS.includes(viewId) && isMobileViewport()) {
     viewId = 'overview';
@@ -73,9 +79,10 @@ function switchView(viewId) {
   const titleEl = document.getElementById('topBarTitle');
   if (titleEl) titleEl.textContent = VIEW_TITLES[viewId] || 'Dashboard';
 
-  // Update hash without reload
+  // Update hash without reload — keep Firebase OAuth query params until auth boot finishes
   if (history.replaceState) {
-    history.replaceState(null, '', `#${viewId}`);
+    const preserveSearch = isAuthCallbackUrl() ? window.location.search : '';
+    history.replaceState(null, '', `${window.location.pathname}${preserveSearch}#${viewId}`);
   }
 
   // If switching to revise, render revision view with latest data
@@ -1076,11 +1083,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // ── Hash-based initial view (e.g. navigating back from revision.html) ──
-  const hashView = window.location.hash.replace('#', '');
-  if (hashView && ['overview', 'problems', 'revise', 'signin', 'profile', 'striver', 'plan', 'analytics', 'github', 'developers', 'extension'].includes(hashView)) {
-    switchView(hashView);
+  // ── Hash-based initial view (wait for Google redirect auth if returning from OAuth) ──
+  async function applyInitialView() {
+    if (window.LeetLensCloud?.ensureAuthBoot) {
+      try {
+        await window.LeetLensCloud.ensureAuthBoot();
+      } catch (_) {}
+    }
+    const hashView = window.location.hash.replace('#', '');
+    if (hashView && ['overview', 'problems', 'revise', 'signin', 'profile', 'striver', 'plan', 'analytics', 'github', 'developers', 'extension'].includes(hashView)) {
+      switchView(hashView);
+    }
   }
+  applyInitialView();
 
   // Initial load
   loadData();

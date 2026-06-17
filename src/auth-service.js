@@ -95,15 +95,26 @@ function isMobileBrowser() {
 }
 
 function shouldPreferRedirect() {
-  return isMobileBrowser() || isPendingAuthRedirect() || isAuthCallbackUrl();
+  return isAuthCallbackUrl();
 }
 
-function createGoogleProvider() {
-  const provider = new GoogleAuthProvider();
-  provider.addScope('email');
-  provider.addScope('profile');
-  provider.setCustomParameters({ prompt: 'select_account' });
-  return provider;
+function cleanAuthParamsFromUrl() {
+  if (typeof window === 'undefined') return;
+  try {
+    const url = new URL(window.location.href);
+    const authParams = ['apiKey', 'authType', 'code', 'state', 'oobCode', 'mode', 'lang', 'tid', 'eid'];
+    let changed = false;
+    authParams.forEach(param => {
+      if (url.searchParams.has(param)) {
+        url.searchParams.delete(param);
+        changed = true;
+      }
+    });
+    if (!changed) return;
+    const search = url.searchParams.toString();
+    const next = `${url.pathname}${search ? `?${search}` : ''}${url.hash}`;
+    history.replaceState(null, '', next);
+  } catch (_) {}
 }
 
 /** Call on app load to complete signInWithRedirect flows. */
@@ -111,23 +122,34 @@ export async function handleGoogleRedirectResult() {
   if (redirectResultHandled) return null;
   redirectResultHandled = true;
 
+  const hadCallback = isAuthCallbackUrl() || isPendingAuthRedirect();
+  if (!hadCallback) return null;
+
   const auth = getFirebaseAuth();
   await ensureAuthPersistence(auth);
   try {
+    await auth.authStateReady();
     const result = await getRedirectResult(auth);
     if (result?.user) {
       clearPendingRedirect();
+      cleanAuthParamsFromUrl();
       return completeSignIn(result.user);
     }
-    if (auth.currentUser && (isPendingAuthRedirect() || isAuthCallbackUrl())) {
+    if (auth.currentUser) {
       clearPendingRedirect();
+      cleanAuthParamsFromUrl();
       return completeSignIn(auth.currentUser);
     }
+    clearPendingRedirect();
+    cleanAuthParamsFromUrl();
+    throw new Error(
+      'Google sign-in could not be completed after redirect. Please try again. On iPhone, use Safari (not an in-app browser) and avoid private browsing.'
+    );
   } catch (err) {
     clearPendingRedirect();
+    cleanAuthParamsFromUrl();
     throw new Error(formatAuthError(err));
   }
-  return null;
 }
 
 async function signInWithGoogleRedirect(auth, provider) {
@@ -152,11 +174,19 @@ async function signInWithGoogleFirebase() {
     const useRedirect = err?.code === 'auth/popup-blocked'
       || err?.code === 'auth/cancelled-popup-request'
       || err?.code === 'auth/operation-not-supported-in-this-environment';
-    if (useRedirect) {
+    if (useRedirect || isMobileBrowser()) {
       return signInWithGoogleRedirect(auth, provider);
     }
     throw err;
   }
+}
+
+function createGoogleProvider() {
+  const provider = new GoogleAuthProvider();
+  provider.addScope('email');
+  provider.addScope('profile');
+  provider.setCustomParameters({ prompt: 'select_account' });
+  return provider;
 }
 
 async function upsertUserDoc(user) {

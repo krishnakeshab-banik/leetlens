@@ -39,6 +39,7 @@ import {
 } from './github-api.js';
 
 let authUnsubscribe = null;
+let authBootPromise = null;
 let cloudState = {
   user: null,
   profile: null,
@@ -82,6 +83,9 @@ function toCloudUser(firebaseUser) {
 }
 
 export async function initCloud() {
+  if (authBootPromise) return authBootPromise;
+
+  authBootPromise = (async () => {
   if (!isFirebaseConfigured()) {
     setState({ loading: false, error: 'Firebase not configured' });
     return cloudState;
@@ -127,6 +131,13 @@ export async function initCloud() {
   });
 
   return cloudState;
+  })();
+
+  return authBootPromise;
+}
+
+export function ensureAuthBoot() {
+  return initCloud();
 }
 
 export function onCloudStateChange(fn) {
@@ -483,6 +494,7 @@ export async function onProblemSolved(record) {
 // Expose API on window only (avoid esbuild globalName conflicts)
 const LeetLensCloudAPI = {
   initCloud,
+  ensureAuthBoot,
   onCloudStateChange,
   getCloudState,
   login,
@@ -516,3 +528,14 @@ const LeetLensCloudAPI = {
 
 window.LeetLensCloud = LeetLensCloudAPI;
 if (typeof globalThis !== 'undefined') globalThis.LeetLensCloud = LeetLensCloudAPI;
+
+if (typeof window !== 'undefined' && isFirebaseConfigured()) {
+  const pendingRedirect = (() => {
+    try { return sessionStorage.getItem('leetlensPendingAuthRedirect') === '1'; } catch (_) { return false; }
+  })();
+  const authCallback = /[?&](apiKey|authType|code|state)=/.test(window.location.search)
+    || /(?:^|[?#&])(apiKey|authType)=/.test(window.location.hash);
+  if (pendingRedirect || authCallback) {
+    initCloud();
+  }
+}

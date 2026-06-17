@@ -43,6 +43,12 @@
     return window.location.hash === '#signin' || isCompletingAuthRedirect() || isPendingAuthRedirectLocal();
   }
 
+  function isAuthCallbackUrlLocal() {
+    const { search, hash } = window.location;
+    return /[?&](apiKey|authType|code|state)=/.test(search)
+      || /(?:^|[?#&])(apiKey|authType)=/.test(hash);
+  }
+
   function isPendingAuthRedirectLocal() {
     try {
       return sessionStorage.getItem('leetlensPendingAuthRedirect') === '1';
@@ -252,11 +258,20 @@
       return;
     }
 
-    if (state.loading || isCompletingAuthRedirect()) {
+    if (state.loading && (isPendingAuthRedirectLocal() || isAuthCallbackUrlLocal())) {
       container.innerHTML = `
         <div class="auth-state-card">
           <div class="auth-state-spinner"></div>
-          <p>${isCompletingAuthRedirect() ? 'Completing Google sign-in…' : 'Restoring session…'}</p>
+          <p>Completing Google sign-in…</p>
+        </div>`;
+      return;
+    }
+
+    if (state.loading) {
+      container.innerHTML = `
+        <div class="auth-state-card">
+          <div class="auth-state-spinner"></div>
+          <p>Restoring session…</p>
         </div>`;
       return;
     }
@@ -814,7 +829,7 @@
 
     renderAll({ loading: true, user: null, profile: null, stats: null, error: null, syncing: false });
 
-    await cloud().initCloud();
+    await cloud().ensureAuthBoot?.() || cloud().initCloud();
     cloud().onCloudStateChange(state => {
       renderAll(state);
       if (state.user && !state.loading && shouldNavigateAfterSignIn()) {
