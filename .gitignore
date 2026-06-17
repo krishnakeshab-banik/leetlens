@@ -1,6 +1,8 @@
 node_modules/
 lib/dashboard-bundle.js
 lib/background-bundle.js
+web/lib/dashboard-bundle.js
+web/lib/background-bundle.js
 .env
 .firebase/
 functions/lib/
