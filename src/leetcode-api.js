@@ -1,7 +1,14 @@
 const GRAPHQL_URL = 'https://leetcode.com/graphql';
 
+function graphqlEndpoint() {
+  if (typeof window !== 'undefined' && window.__LEETLENS_WEB__) {
+    return '/api/leetcode';
+  }
+  return GRAPHQL_URL;
+}
+
 async function graphql(query, variables = {}) {
-  const res = await fetch(GRAPHQL_URL, {
+  const res = await fetch(graphqlEndpoint(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables })
@@ -97,7 +104,10 @@ export async function validateUsername(username) {
     }
     return { valid: true, username: clean, profile: data.matchedUser.profile };
   } catch (err) {
-    return { valid: false, error: err.message };
+    const msg = err.message === 'Failed to fetch'
+      ? 'Could not reach LeetCode. Check your connection or try again from the Chrome extension.'
+      : err.message;
+    return { valid: false, error: msg };
   }
 }
 

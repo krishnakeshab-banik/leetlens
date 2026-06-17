@@ -1075,20 +1075,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initial load
   loadData();
 
-  // Cloud sync listeners
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === 'CLOUD_MARK_SOLVED' && window.LeetLensCloud?.getCloudState()?.user) {
-      window.LeetLensCloud.onProblemSolved(msg.record);
-      if (window.LeetLensStriver) window.LeetLensStriver.renderOverviewWidget();
-      if (window.LeetLensPlan) window.LeetLensPlan.renderOverviewWidget();
-    }
-    if (msg.type === 'SAVE_ACTIVITY' && window.LeetLensCloud?.getCloudState()?.user) {
-      window.LeetLensCloud.saveProblemActivity(msg.activity);
-    }
-  });
+  // Cloud sync listeners (extension only — web shim provides no-op onMessage)
+  if (chrome.runtime?.onMessage?.addListener) {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg.type === 'CLOUD_MARK_SOLVED' && window.LeetLensCloud?.getCloudState()?.user) {
+        window.LeetLensCloud.onProblemSolved(msg.record);
+        if (window.LeetLensStriver) window.LeetLensStriver.renderOverviewWidget();
+        if (window.LeetLensPlan) window.LeetLensPlan.renderOverviewWidget();
+      }
+      if (msg.type === 'SAVE_ACTIVITY' && window.LeetLensCloud?.getCloudState()?.user) {
+        window.LeetLensCloud.saveProblemActivity(msg.activity);
+      }
+    });
+  }
 
   // Listen for updates from background
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (chrome.runtime?.onMessage?.addListener) chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'DASHBOARD_UPDATE') {
       allRecords = msg.records;
       updateStats();

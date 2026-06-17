@@ -20,16 +20,23 @@
     localStorage.setItem(key, JSON.stringify(value));
   }
 
+  const messageListeners = [];
+
   const runtime = {
     getURL(path) {
       return new URL(path, window.location.href).href;
+    },
+    onMessage: {
+      addListener(fn) {
+        if (typeof fn === 'function') messageListeners.push(fn);
+      }
     },
     sendMessage(msg, cb) {
       const type = msg?.type;
       let response = {};
 
-      if (type === 'GET_RECORDS') {
-        response = { records: readStore(STORAGE_KEY, {}) };
+      if (type === 'GET_RECORDS' || type === 'GET_DATA') {
+        response = { records: readStore(STORAGE_KEY, {}), session: readStore(SESSION_KEY, null) };
       } else if (type === 'GET_CURRENT') {
         response = { session: readStore(SESSION_KEY, null) };
       } else if (type === 'SET_STARS') {

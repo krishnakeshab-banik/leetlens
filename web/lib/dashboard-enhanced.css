@@ -1525,15 +1525,9 @@
   gap: 16px;
   padding: 20px 22px;
   position: relative;
-  min-width: 0;
 }
-@media (max-width: 640px) {
-  .srm-insider-content {
-    flex-wrap: wrap;
-    padding: 16px !important;
-    gap: 12px;
-  }
-  .srm-insider-arrow { display: none; }
+@media (max-width: 480px) {
+  .srm-insider-content { flex-wrap: wrap; }
 }
 .srm-insider-icon {
   width: 48px;

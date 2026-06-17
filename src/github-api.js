@@ -1,7 +1,14 @@
 const GITHUB_API = 'https://api.github.com';
 
+function githubUrl(path) {
+  if (typeof window !== 'undefined' && window.__LEETLENS_WEB__) {
+    return `/api/github?path=${encodeURIComponent(path)}`;
+  }
+  return `${GITHUB_API}${path}`;
+}
+
 async function ghFetch(path) {
-  const res = await fetch(`${GITHUB_API}${path}`, {
+  const res = await fetch(githubUrl(path), {
     headers: { Accept: 'application/vnd.github+json' }
   });
   if (res.status === 404) return null;
@@ -19,7 +26,10 @@ export async function validateGithubUsername(username) {
     if (!profile) return { valid: false, error: 'GitHub user not found' };
     return { valid: true, username: clean, profile };
   } catch (err) {
-    return { valid: false, error: err.message };
+    const msg = err.message === 'Failed to fetch'
+      ? 'Could not reach GitHub. Check your connection or try again later.'
+      : err.message;
+    return { valid: false, error: msg };
   }
 }
 
