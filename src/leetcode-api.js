@@ -24,7 +24,7 @@ const USER_EXISTS_QUERY = `
 const USER_STATS_QUERY = `
   query userStats($username: String!) {
     matchedUser(username: $username) {
-      submitStats {
+      submitStats: submitStatsGlobal {
         acSubmissionNum { difficulty count submissions }
         totalSubmissionNum { difficulty count submissions }
       }
@@ -41,6 +41,28 @@ const CALENDAR_QUERY = `
   }
 `;
 
+const RECENT_AC_QUERY = `
+  query recentAcSubmissions($username: String!, $limit: Int!) {
+    recentAcSubmissionList(username: $username, limit: $limit) {
+      id
+      title
+      titleSlug
+      timestamp
+    }
+  }
+`;
+
+const RECENT_AC_PAGED_QUERY = `
+  query recentAcPaged($username: String!, $limit: Int!, $skip: Int!) {
+    recentAcSubmissionList(username: $username, limit: $limit, skip: $skip) {
+      id
+      title
+      titleSlug
+      timestamp
+    }
+  }
+`;
+
 const RECENT_SUBMISSIONS_QUERY = `
   query recentSubmissions($username: String!, $limit: Int!) {
     recentSubmissionList(username: $username, limit: $limit) {
@@ -53,11 +75,12 @@ const RECENT_SUBMISSIONS_QUERY = `
   }
 `;
 
-const USER_PROBLEMS_QUERY = `
-  query userProblems($username: String!) {
-    matchedUser(username: $username) {
-      problemsSolvedBeatsStats { difficulty percentage }
-      tagProblemCounts { advanced { tagName problemsSolved } intermediate { tagName problemsSolved } fundamental { tagName problemsSolved } }
+const PROBLEM_DIFFICULTY_QUERY = `
+  query questionData($titleSlug: String!) {
+    question(titleSlug: $titleSlug) {
+      title
+      titleSlug
+      difficulty
     }
   }
 `;
@@ -107,8 +130,6 @@ export function computeStreakFromCalendar(calendar) {
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
 
   const mostRecent = new Date(dates[0]);
   mostRecent.setHours(0, 0, 0, 0);
@@ -147,32 +168,110 @@ export async function fetchRecentSubmissions(username, limit = 20) {
   return data?.recentSubmissionList || [];
 }
 
+async function fetchProblemDifficulty(titleSlug) {
+  try {
+    const data = await graphql(PROBLEM_DIFFICULTY_QUERY, { titleSlug });
+    return data?.question?.difficulty || 'Unknown';
+  } catch {
+    return 'Unknown';
+  }
+}
+
+async function enrichDifficulties(problems, concurrency = 6, maxEnrich = 200) {
+  const toEnrich = problems.slice(0, maxEnrich);
+  for (let i = 0; i < toEnrich.length; i += concurrency) {
+    const batch = toEnrich.slice(i, i + concurrency);
+    await Promise.all(batch.map(async p => {
+      if (p.difficulty && p.difficulty !== 'Unknown') return;
+      p.difficulty = await fetchProblemDifficulty(p.problemId);
+    }));
+  }
+  return problems;
+}
+
+function collectUniqueSubmissions(submissions, seen, problems) {
+  submissions.forEach(s => {
+    const slug = (s.titleSlug || '').toLowerCase();
+    if (!slug || seen.has(slug)) return;
+    seen.add(slug);
+    problems.push({
+      problemId: slug,
+      title: s.title || slug,
+      difficulty: 'Unknown',
+      solvedAt: Number(s.timestamp) * 1000,
+      source: 'leetcode-sync'
+    });
+  });
+}
+
+async function fetchAcSubmissionsAll(username, targetTotal) {
+  const seen = new Set();
+  const problems = [];
+  const pageSize = 50;
+  let skip = 0;
+  let usePaging = true;
+
+  while (problems.length < targetTotal) {
+    let batch = [];
+    if (usePaging) {
+      try {
+        const data = await graphql(RECENT_AC_PAGED_QUERY, { username, limit: pageSize, skip });
+        batch = data?.recentAcSubmissionList || [];
+      } catch (_) {
+        usePaging = false;
+      }
+    }
+
+    if (!usePaging) {
+      const limit = Math.min(Math.max(targetTotal, 50), 3000);
+      const data = await graphql(RECENT_AC_QUERY, { username, limit });
+      batch = data?.recentAcSubmissionList || [];
+      collectUniqueSubmissions(batch, seen, problems);
+      break;
+    }
+
+    if (!batch.length) break;
+    const before = problems.length;
+    collectUniqueSubmissions(batch, seen, problems);
+    if (batch.length < pageSize || problems.length === before) break;
+    skip += pageSize;
+    if (skip > targetTotal + 200) break;
+  }
+
+  if (problems.length < targetTotal) {
+    const extra = await fetchRecentSubmissions(username, Math.min(targetTotal * 3, 500));
+    collectUniqueSubmissions(
+      extra.filter(s => s.statusDisplay === 'Accepted'),
+      seen,
+      problems
+    );
+  }
+
+  return problems;
+}
+
+export async function fetchAllSolvedProblems(username) {
+  const profileData = await fetchUserProfile(username);
+  const total = profileData.stats.totalSolved || 0;
+  const problems = await fetchAcSubmissionsAll(username, total || 50);
+  await enrichDifficulties(problems);
+  return { problems, stats: profileData.stats };
+}
+
 export async function syncLeetCodeProfile(username) {
   const year = new Date().getFullYear();
-  const [profileData, calendar, recentSubmissions] = await Promise.all([
-    fetchUserProfile(username),
-    fetchSubmissionCalendar(username, year),
-    fetchRecentSubmissions(username, 50)
+  const [{ problems: solvedProblems, stats: baseStats }, calendar] = await Promise.all([
+    fetchAllSolvedProblems(username),
+    fetchSubmissionCalendar(username, year)
   ]);
 
   const streak = computeStreakFromCalendar(calendar);
   const stats = {
-    ...profileData.stats,
+    ...baseStats,
     streak,
     submissionCalendar: calendar,
-    recentSubmissions,
-    acceptanceStats: profileData.profile,
     syncedAt: Date.now()
   };
-
-  const solvedProblems = recentSubmissions
-    .filter(s => s.statusDisplay === 'Accepted')
-    .map(s => ({
-      problemId: s.titleSlug,
-      title: s.title,
-      solvedAt: Number(s.timestamp) * 1000,
-      source: 'leetcode-sync'
-    }));
 
   return { stats, solvedProblems };
 }

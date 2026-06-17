@@ -38,12 +38,56 @@
     }
 
     .header {
-      padding-bottom: 14px;
+      padding-bottom: 12px;
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       gap: 10px;
-      margin-bottom: 16px;
+      margin-bottom: 10px;
+    }
+
+    .header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+
+    .header-actions .header-btn {
+      flex: 1;
+      min-width: 0;
+      text-align: center;
+      padding: 8px 10px;
+    }
+
+    .header-actions .header-btn-primary {
+      background: var(--accent);
+      color: #0b0b0c;
+      border-color: var(--accent);
+      font-weight: 700;
+    }
+
+    .header-actions .header-btn-primary:hover {
+      opacity: 0.9;
+      background: var(--accent);
+      color: #0b0b0c;
+    }
+
+    .header-actions .header-btn-ghost {
+      flex: 0 0 100%;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 9px;
+      padding: 4px 0;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
+    .header-actions .header-btn-ghost:hover {
+      color: var(--accent);
+      background: transparent;
+      border: none;
     }
 
     .logo {
@@ -412,9 +456,12 @@
       <h1>LeetLens</h1>
       <p>Real-time Problem Tracker</p>
     </div>
-    <div class="header-spacer"></div>
-    <button class="header-btn" id="openSignIn" style="margin-right:6px">Sign In</button>
-    <button class="header-btn" id="openDashboard">Dashboard</button>
+  </div>
+
+  <div class="header-actions">
+    <button class="header-btn header-btn-primary" id="openDashboard">Dashboard</button>
+    <button class="header-btn" id="openSignIn">Sign In</button>
+    <button class="header-btn header-btn-ghost" id="openDevelopers">Meet the Developers →</button>
   </div>
 
   <div class="cloud-bar" id="cloudAuthBar">

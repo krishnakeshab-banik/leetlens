@@ -37,27 +37,140 @@ function getTodayKey(timezone: string): string {
   }).format(new Date());
 }
 
-function buildEmailHtml(user: UserDoc, stats: Record<string, unknown>, plan: Record<string, unknown> | null) {
+function getYesterdayKey(timezone: string): string {
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(yesterday);
+}
+
+function formatDateLabel(dateKey: string): string {
+  const d = new Date(dateKey + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+function buildEmailHtml(
+  user: UserDoc,
+  stats: Record<string, unknown>,
+  plan: Record<string, unknown> | null,
+  yesterday: { solved: number; minutes: number; problems: string[] }
+) {
   const streak = (stats.streak as number) || 0;
   const totalSolved = (stats.totalSolved as number) || 0;
-  const target = (plan?.targetProblems as number) || 0;
-  const completed = ((plan?.completedProblems as string[]) || []).length;
-  const remaining = Math.max(0, target - completed);
+  const easy = (stats.easySolved as number) || 0;
+  const medium = (stats.mediumSolved as number) || 0;
+  const hard = (stats.hardSolved as number) || 0;
+  const goals = (plan?.goals as Array<Record<string, unknown>>) || [];
+  const legacyTarget = (plan?.targetProblems as number) || 0;
+  const legacyDone = ((plan?.completedProblems as string[]) || []).length;
+
+  const goalsHtml = goals.length
+    ? goals.map(g => {
+        const done = ((g.completedSlugs as string[]) || []).length;
+        const target = (g.targetCount as number) || ((g.targetSlugs as string[]) || []).length || 0;
+        return `<li style="margin:6px 0;"><strong>${g.title || 'Weekly Goal'}</strong> — ${done}/${target} completed</li>`;
+      }).join('')
+    : legacyTarget
+      ? `<li style="margin:6px 0;"><strong>Weekly Goal</strong> — ${legacyDone}/${legacyTarget} completed</li>`
+      : '<li style="margin:6px 0;color:#888;">No weekly goals set yet</li>';
+
+  const yesterdayProblems = yesterday.problems.length
+    ? yesterday.problems.map(p => `<li style="margin:4px 0;">✓ ${p}</li>`).join('')
+    : '<li style="margin:4px 0;color:#888;">No problems solved yesterday</li>';
 
   return `
-    <div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1a1a1a;">
-      <h1 style="color:#ffa116;">Keep Your LeetCode Streak Alive 🔥</h1>
-      <p>Hi ${user.displayName || 'Coder'},</p>
-      <p>You haven't solved a LeetCode problem today. Don't break your momentum!</p>
-      <div style="background:#f5f5f5;border-radius:12px;padding:16px;margin:20px 0;">
-        <p>🔥 <strong>Current Streak:</strong> ${streak} days</p>
-        <p>📚 <strong>Total Solved:</strong> ${totalSolved}</p>
-        <p>🎯 <strong>Weekly Goal:</strong> ${completed} / ${target} completed</p>
-        <p>📋 <strong>Remaining Problems:</strong> ${remaining}</p>
+<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#0b0b0c;font-family:'Segoe UI',system-ui,sans-serif;">
+  <div style="max-width:600px;margin:0 auto;padding:32px 24px;">
+    <div style="text-align:center;margin-bottom:28px;">
+      <div style="display:inline-block;background:#ffa116;color:#000;font-weight:800;font-size:14px;padding:8px 20px;border-radius:8px;letter-spacing:0.05em;">⏱ LEETLENS</div>
+      <p style="color:#8b949e;font-size:12px;margin-top:8px;">Your LeetCode Productivity Companion</p>
+    </div>
+
+    <div style="background:#141416;border:1px solid rgba(255,161,22,0.2);border-radius:16px;padding:28px;color:#e5e1e4;">
+      <h1 style="color:#ffa116;font-size:22px;margin:0 0 8px;">Good morning, ${user.displayName || 'Coder'}! ☀️</h1>
+      <p style="color:#8b949e;font-size:14px;line-height:1.6;margin:0 0 24px;">
+        Time to keep your streak alive! Solve at least one LeetCode problem today to maintain your momentum.
+      </p>
+
+      <div style="background:rgba(255,161,22,0.08);border-radius:12px;padding:18px;margin-bottom:20px;">
+        <h2 style="color:#ffa116;font-size:13px;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">📊 Yesterday's Report</h2>
+        <p style="margin:4px 0;font-size:14px;">Problems solved: <strong style="color:#00a572;">${yesterday.solved}</strong></p>
+        <p style="margin:4px 0;font-size:14px;">Time practiced: <strong>${yesterday.minutes} min</strong></p>
+        <ul style="margin:10px 0 0;padding-left:18px;font-size:13px;color:#c9c4c8;">${yesterdayProblems}</ul>
       </div>
-      <p>Open LeetLens and solve at least one problem before the day ends.</p>
-      <p style="color:#666;font-size:12px;">You're receiving this because email reminders are enabled in LeetLens.</p>
-    </div>`;
+
+      <div style="background:rgba(32,31,34,0.8);border-radius:12px;padding:18px;margin-bottom:20px;">
+        <h2 style="color:#e5e1e4;font-size:13px;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">🔥 Your Stats</h2>
+        <p style="margin:4px 0;font-size:14px;">Streak: <strong style="color:#ffa116;">${streak} days</strong></p>
+        <p style="margin:4px 0;font-size:14px;">Total Solved: <strong>${totalSolved}</strong> (Easy ${easy} · Medium ${medium} · Hard ${hard})</p>
+        ${user.leetcodeUsername ? `<p style="margin:4px 0;font-size:13px;color:#8b949e;">LeetCode: @${user.leetcodeUsername}</p>` : ''}
+      </div>
+
+      <div style="background:rgba(32,31,34,0.8);border-radius:12px;padding:18px;margin-bottom:24px;">
+        <h2 style="color:#e5e1e4;font-size:13px;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px;">🎯 Weekly Goals</h2>
+        <ul style="margin:0;padding-left:18px;font-size:13px;color:#c9c4c8;">${goalsHtml}</ul>
+      </div>
+
+      <p style="font-size:14px;color:#e5e1e4;margin:0 0 8px;">Open LeetLens and tackle today's challenge. Even one problem counts!</p>
+      <p style="font-size:12px;color:#8b949e;margin:0;">— Team LeetLens</p>
+    </div>
+
+    <p style="text-align:center;color:#555;font-size:11px;margin-top:20px;">
+      You're receiving this because email reminders are enabled in LeetLens.<br/>
+      Sent daily at 10:00 AM IST · Disable in Profile settings
+    </p>
+  </div>
+</body>
+</html>`;
+}
+
+async function getYesterdayReport(
+  db: FirebaseFirestore.Firestore,
+  uid: string,
+  timezone: string
+): Promise<{ solved: number; minutes: number; problems: string[] }> {
+  const yesterdayKey = getYesterdayKey(timezone);
+  const snapRef = db.collection('users').doc(uid).collection('dailySnapshots').doc(yesterdayKey);
+  const snap = await snapRef.get();
+  const snapData = snap.data() || {};
+
+  const activitySnap = await db.collection('users').doc(uid).collection('activity')
+    .where('endedAt', '>=', Timestamp.fromDate(new Date(yesterdayKey + 'T00:00:00')))
+    .limit(20)
+    .get();
+
+  const problems: string[] = [];
+  let minutes = 0;
+
+  activitySnap.docs.forEach(doc => {
+    const d = doc.data();
+    if (d.problemId) problems.push(String(d.problemId));
+    minutes += Number(d.timeSpentMinutes) || 0;
+  });
+
+  const solvedSnap = await db.collection('users').doc(uid).collection('solvedProblems')
+    .where('solvedAt', '>=', new Date(yesterdayKey + 'T00:00:00').getTime())
+    .limit(20)
+    .get();
+
+  solvedSnap.docs.forEach(doc => {
+    const d = doc.data();
+    const title = d.title || d.problemId;
+    if (title && !problems.includes(title)) problems.push(String(title));
+  });
+
+  return {
+    solved: (snapData.solvedToday as number) || problems.length || 0,
+    minutes,
+    problems: problems.slice(0, 8)
+  };
 }
 
 export const sendDailyReminders = onSchedule(
@@ -80,7 +193,7 @@ export const sendDailyReminders = onSchedule(
       if (!user.email) continue;
 
       const timezone = user.timezone || 'Asia/Kolkata';
-      const reminderTime = user.reminderTime || '19:00';
+      const reminderTime = user.reminderTime || '10:00';
       const currentTime = getCurrentTimeInTimezone(timezone);
 
       if (currentTime !== reminderTime) continue;
@@ -91,11 +204,11 @@ export const sendDailyReminders = onSchedule(
 
       if (snapshot.exists) {
         const data = snapshot.data() || {};
-        if ((data.solvedToday as number) > 0 || (data.totalSolved as number) > 0) continue;
+        if ((data.solvedToday as number) > 0) continue;
       }
 
       const activitySnap = await db.collection('users').doc(user.uid).collection('activity')
-        .where('endedAt', '>=', Timestamp.fromDate(new Date(todayKey)))
+        .where('endedAt', '>=', Timestamp.fromDate(new Date(todayKey + 'T00:00:00')))
         .limit(1)
         .get();
 
@@ -106,15 +219,15 @@ export const sendDailyReminders = onSchedule(
 
       const weekId = getWeekId(new Date(), timezone);
       const planSnap = await db.collection('users').doc(user.uid).collection('weeklyPlans').doc(weekId).get();
-      const plan = planSnap.exists
-        ? (planSnap.data() as Record<string, unknown>)
-        : null;
+      const plan = planSnap.exists ? (planSnap.data() as Record<string, unknown>) : null;
+
+      const yesterday = await getYesterdayReport(db, user.uid, timezone);
 
       await resend.emails.send({
-        from,
+        from: from.includes('LeetLens') ? from : `LeetLens <${from}>`,
         to: user.email,
-        subject: 'Keep Your LeetCode Streak Alive 🔥',
-        html: buildEmailHtml(user, stats, plan)
+        subject: `☀️ LeetLens Daily — ${formatDateLabel(todayKey)} | Keep your streak!`,
+        html: buildEmailHtml(user, stats, plan, yesterday)
       });
     }
   }

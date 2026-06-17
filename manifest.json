@@ -72,7 +72,10 @@
         "lib/dashboard-plan.js",
         "lib/dashboard-analytics.js",
         "lib/dashboard-github.js",
+        "lib/dashboard-extension.js",
+        "lib/dashboard-developers.js",
         "lib/dashboard-enhanced.css",
+        "assets/developers/*",
         "data/striver-a2z.json"
       ],
       "matches": [
@@ -87,5 +90,12 @@
       },
       "description": "Open LeetCode Tracker Dashboard"
     }
+  },
+  "externally_connectable": {
+    "matches": [
+      "https://*.vercel.app/*",
+      "http://localhost/*",
+      "https://localhost/*"
+    ]
   }
 }

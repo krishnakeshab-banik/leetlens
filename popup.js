@@ -178,6 +178,11 @@ document.addEventListener('click', e => {
 });
 
 // ── navigation ──────────────────────────────────────────────────────────
+document.getElementById('openDevelopers')?.addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html#developers') });
+  window.close();
+});
+
 document.getElementById('openDashboard').addEventListener('click', () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('dashboard.html') });
   window.close();

@@ -112,7 +112,7 @@ cd ..
 firebase deploy --only functions
 ```
 
-The scheduled function `sendDailyReminders` runs every 15 minutes and sends emails at each user's `reminderTime` (default **19:00 IST**).
+The scheduled function `sendDailyReminders` runs every 15 minutes and sends emails at each user's `reminderTime` (default **10:00 IST**).
 
 ---
 

@@ -361,6 +361,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
       }
+      case 'EXTENSION_PING': {
+        const records = await getRecords();
+        const solved = Object.values(records).filter(r => r.solved).length;
+        sendResponse({
+          ok: true,
+          version: chrome.runtime.getManifest().version,
+          recordCount: Object.keys(records).length,
+          solvedCount: solved,
+          inUse: Boolean(activeSession?.slug),
+          currentProblem: activeSession?.title || activeSession?.slug || null
+        });
+        break;
+      }
     }
   })();
   return true; // keep channel open for async

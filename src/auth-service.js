@@ -152,7 +152,7 @@ async function upsertUserDoc(user) {
   if (!snap.exists()) {
     payload.createdAt = now;
     payload.emailRemindersEnabled = true;
-    payload.reminderTime = '19:00';
+    payload.reminderTime = '10:00';
     payload.timezone = 'Asia/Kolkata';
   }
   try {

@@ -28,6 +28,7 @@ import {
   syncLocalRecordToCloud
 } from './firestore-service.js';
 import {
+  fetchAllSolvedProblems,
   syncLeetCodeProfile,
   validateUsername
 } from './leetcode-api.js';
@@ -201,7 +202,7 @@ export async function syncProfile() {
       await saveSolvedProblem(user.uid, {
         problemId: p.problemId,
         title: p.title,
-        difficulty: 'Unknown',
+        difficulty: p.difficulty || 'Unknown',
         solvedAt: p.solvedAt,
         timeSpentMinutes: 0,
         userDifficultyRating: 0,
@@ -299,11 +300,112 @@ export async function fetchAnalyticsData() {
   return { snapshots, solved, activity, stats: cloudState.stats };
 }
 
+export async function fetchLiveLeetCodeProblems() {
+  const username = cloudState.profile?.leetcodeUsername;
+  if (!username) return [];
+  const cacheKey = `lc_live_${username}`;
+  try {
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) {
+      const { at, problems } = JSON.parse(cached);
+      if (Date.now() - at < 5 * 60 * 1000) return problems;
+    }
+  } catch (_) {}
+
+  const { problems } = await fetchAllSolvedProblems(username);
+  try {
+    sessionStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), problems }));
+  } catch (_) {}
+  return problems;
+}
+
 export async function fetchWeeklyPlanData() {
   const user = cloudState.user;
   if (!user) return null;
-  const plan = await getCurrentWeeklyPlan(user.uid);
-  return plan;
+  return getCurrentWeeklyPlan(user.uid);
+}
+
+export async function fetchWeeklyGoals() {
+  const plan = await fetchWeeklyPlanData();
+  return plan?.goals || [];
+}
+
+export async function saveWeeklyGoals(goals) {
+  const user = await requireAuthUser();
+  const range = getWeekRange();
+  const existing = (await getCurrentWeeklyPlan(user.uid)) || {};
+  await saveWeeklyPlan(user.uid, range.weekId, {
+    ...existing,
+    weekId: range.weekId,
+    startDate: range.startDate,
+    endDate: range.endDate,
+    goals
+  });
+  return goals;
+}
+
+export async function addWeeklyGoal(goal) {
+  const goals = await fetchWeeklyGoals();
+  const newGoal = {
+    id: `g_${Date.now()}`,
+    title: goal.title || 'Weekly Goal',
+    type: goal.type || 'count',
+    targetCount: Number(goal.targetCount) || 0,
+    targetSlugs: goal.targetSlugs || [],
+    difficulty: goal.difficulty || 'all',
+    completedSlugs: [],
+    status: 'active',
+    createdAt: Date.now()
+  };
+  goals.push(newGoal);
+  await saveWeeklyGoals(goals);
+  return newGoal;
+}
+
+export async function updateWeeklyGoal(goalId, updates) {
+  const goals = await fetchWeeklyGoals();
+  const idx = goals.findIndex(g => g.id === goalId);
+  if (idx === -1) throw new Error('Goal not found');
+  goals[idx] = { ...goals[idx], ...updates };
+  await saveWeeklyGoals(goals);
+  return goals[idx];
+}
+
+export async function deleteWeeklyGoal(goalId) {
+  const goals = (await fetchWeeklyGoals()).filter(g => g.id !== goalId);
+  await saveWeeklyGoals(goals);
+  return goals;
+}
+
+export async function markGoalProblemComplete(slug) {
+  const goals = await fetchWeeklyGoals();
+  let changed = false;
+  goals.forEach(goal => {
+    if (goal.status === 'completed') return;
+    const completed = goal.completedSlugs || [];
+    if (completed.includes(slug)) return;
+
+    if (goal.type === 'specific') {
+      const targets = goal.targetSlugs || [];
+      if (targets.includes(slug)) {
+        completed.push(slug);
+        goal.completedSlugs = completed;
+        changed = true;
+      }
+    } else if (goal.type === 'count') {
+      completed.push(slug);
+      goal.completedSlugs = completed;
+      changed = true;
+    }
+
+    const target = goal.type === 'specific'
+      ? (goal.targetSlugs || []).length
+      : (goal.targetCount || 0);
+    if (target > 0 && (goal.completedSlugs || []).length >= target) {
+      goal.status = 'completed';
+    }
+  });
+  if (changed) await saveWeeklyGoals(goals);
 }
 
 export async function createOrUpdateWeeklyPlan(targetProblems, problemSlugs = []) {
@@ -354,6 +456,7 @@ export async function onProblemSolved(record) {
   const today = new Date().toISOString().slice(0, 10);
   await saveDailySnapshot(user.uid, today, { solvedToday: 1 });
   await markWeeklyProblemComplete(record.slug);
+  await markGoalProblemComplete(record.slug);
 }
 
 // Expose API on window only (avoid esbuild globalName conflicts)
@@ -375,7 +478,12 @@ const LeetLensCloudAPI = {
   saveProblemRating,
   updateReminderSettings,
   fetchAnalyticsData,
+  fetchLiveLeetCodeProblems,
   fetchWeeklyPlanData,
+  fetchWeeklyGoals,
+  addWeeklyGoal,
+  updateWeeklyGoal,
+  deleteWeeklyGoal,
   createOrUpdateWeeklyPlan,
   markWeeklyProblemComplete,
   onProblemSolved,
