@@ -1,5 +1,4 @@
-<<<<<<< HEAD
-# LeetCode Time Tracker
+# LeetLens
 
 A lightweight, offline-first Chrome extension that sits in your LeetCode sidebar and tracks exactly how long you spend on each problem. 
 
