@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LeetLens · Revision Schedule</title>
+  <link href="tailwind.css" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0b0b0c;
+      --surface:   rgba(20,20,22,0.65);
+      --border:    rgba(63,63,70,0.2);
+      --border-hi: rgba(255,161,22,0.25);
+      --accent:    #ffa116;
+      --text:      #e5e1e4;
+      --muted:     #8b949e;
+      --easy:      #00a572;
+      --medium:    #fba315;
+      --hard:      #ffb4ab;
+      --red:       #ef4444;
+      --radius:    12px;
+    }
+
+    body {
+      font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: #201f22; border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+    /* ── Sidebar nav (identical to dashboard) ── */
+    .sidebar-nav {
+      display: none;
+      flex-direction: column;
+      height: 100%;
+      padding: 32px 0;
+      position: fixed;
+      width: 240px;
+      left: 0; top: 0;
+      border-right: 1px solid var(--border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      background: rgba(14,14,16,0.8);
+      z-index: 50;
+      overflow-y: auto;
+    }
+    @media (min-width: 1024px) { .sidebar-nav { display: flex; } }
+
+    .sidebar-brand {
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 24px;
+      margin-bottom: 32px;
+    }
+    .brand-icon-box {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      color: #0b0b0c; font-weight: 700;
+    }
+    .brand-icon-box .material-symbols-outlined { font-size: 18px; }
+    .brand-name { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+
+    .nav-group-label {
+      font-size: 9px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: rgba(139,148,158,0.4);
+      padding: 0 16px 8px;
+    }
+    .nav-links { flex-grow: 1; padding: 0 16px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+
+    .nav-link {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 16px;
+      border-radius: 12px;
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      color: var(--muted);
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .nav-link:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+    .nav-link.active { background: rgba(32,31,34,0.9); color: var(--accent); }
+    .nav-link.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+    .nav-link .material-symbols-outlined { font-size: 18px; }
+
+    .nav-roadmap-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px;
+      border-radius: 12px;
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      color: rgba(139,148,158,0.5);
+      cursor: not-allowed;
+    }
+    .nav-roadmap-item .inner { display: flex; align-items: center; gap: 12px; }
+    .nav-roadmap-item .material-symbols-outlined { font-size: 18px; opacity: 0.6; }
+    .soon-badge {
+      font-size: 8px; font-weight: 700; text-transform: uppercase;
+      background: rgba(63,63,70,0.2); color: rgba(139,148,158,0.7);
+      padding: 2px 6px; border-radius: 4px; letter-spacing: 0.05em;
+    }
+
+    /* Streak widget */
+    .streak-widget {
+      margin: 16px; margin-top: auto;
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(63,63,70,0.15);
+      background: rgba(14,14,16,0.75);
+      backdrop-filter: blur(16px);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .streak-inner { display: flex; align-items: center; gap: 10px; }
+    .streak-emoji { font-size: 16px; }
+    .streak-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: rgba(139,148,158,0.7); }
+    .streak-val   { font-size: 12px; font-weight: 700; margin-top: 2px; }
+    .streak-active { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; background: rgba(255,161,22,0.1); color: var(--accent); padding: 2px 6px; border-radius: 4px; }
+
+    /* Sidebar action buttons */
+    .sidebar-actions { padding: 0 16px; display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .sidebar-btn {
+      width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 10px;
+      border: 1px solid rgba(63,63,70,0.2); border-radius: 12px;
+      background: rgba(20,20,22,0.5);
+      color: var(--muted);
+      font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em;
+      cursor: pointer; transition: all 0.3s;
+    }
+    .sidebar-btn:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+    .sidebar-btn.danger:hover { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); color: var(--red); }
+    .sidebar-btn .material-symbols-outlined { font-size: 16px; }
+
+    /* ── Main layout ── */
+    .page-main {
+      flex-grow: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding-left: 0;
+    }
+    @media (min-width: 1024px) { .page-main { padding-left: 240px; } }
+
+    /* Top bar */
+    .top-bar {
+      height: 56px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 32px;
+      background: rgba(11,11,12,0.4);
+      backdrop-filter: blur(16px);
+      position: sticky; top: 0; z-index: 40;
+    }
+    .top-bar-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+
+    /* ── Page content ── */
+    .content { max-width: 1024px; width: 100%; margin: 0 auto; padding: 32px 24px; display: flex; flex-direction: column; gap: 28px; }
+
+    /* ── Stats strip ── */
+    .stats-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    @media (max-width: 768px) { .stats-strip { grid-template-columns: repeat(2, 1fr); } }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px 20px;
+      backdrop-filter: blur(16px); transition: border-color 0.2s;
+    }
+    .stat-card:hover { border-color: var(--border-hi); }
+    .stat-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; }
+    .stat-value { font-size: 30px; font-weight: 800; font-family: 'JetBrains Mono', monospace; letter-spacing: -0.03em; }
+    .stat-card.overdue  .stat-value { color: var(--red); }
+    .stat-card.today    .stat-value { color: var(--accent); }
+    .stat-card.upcoming .stat-value { color: var(--easy); }
+    .stat-card.total    .stat-value { color: var(--text); }
+
+    /* ── Legend ── */
+    .legend { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; font-size: 11px; color: var(--muted); }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+    /* ── Section heading ── */
+    .section-heading { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 14px; }
+
+    /* ── Today / Overdue panel ── */
+    .urgent-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; backdrop-filter: blur(16px); }
+    .urgent-cards { display: flex; flex-direction: column; gap: 8px; }
+    .urgent-group-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 10px 0 6px; }
+    .overdue-title { color: var(--red); }
+    .today-title   { color: var(--accent); }
+
+    .urgent-card { display: block; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; text-decoration: none; color: var(--text); transition: all 0.2s; }
+    .urgent-card:hover { border-color: var(--border-hi); background: rgba(255,161,22,0.03); }
+    .urgent-card.overdue   { border-left: 3px solid var(--red); }
+    .urgent-card.due-today { border-left: 3px solid var(--accent); }
+    .urgent-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .urgent-card-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .urgent-card-meta  { font-size: 11px; color: var(--muted); }
+    .urgent-label { font-size: 10px; font-weight: 600; color: var(--muted); margin-left: auto; }
+
+    .revision-pill, .diff-pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+    .no-urgent { text-align: center; padding: 28px; color: var(--muted); }
+    .icon-lg { font-size: 28px; display: block; margin-bottom: 8px; }
+
+    /* ── Calendar wrapper ── */
+    .cal-wrapper { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; backdrop-filter: blur(16px); }
+    .cal-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .cal-month-label { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; flex: 1; }
+    .cal-nav-btn { width: 32px; height: 32px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-size: 16px; }
+    .cal-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .cal-today-btn { padding: 5px 14px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; transition: all 0.2s; }
+    .cal-today-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .cal-day-names { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 8px; }
+    .cal-day-name { text-align: center; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 6px 0; }
+
+    #calGrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+
+    .cal-cell { min-height: 72px; padding: 8px; border-radius: 10px; border: 1px solid transparent; background: rgba(255,255,255,0.015); cursor: default; transition: all 0.2s; display: flex; flex-direction: column; gap: 4px; position: relative; }
+    .cal-cell.empty { background: transparent; border-color: transparent; }
+    .cal-cell.cal-past { opacity: 0.35; }
+    .cal-cell.cal-future-event { border-color: rgba(255,161,22,0.2); background: rgba(255,161,22,0.04); cursor: pointer; }
+    .cal-cell.cal-future-event:hover { border-color: rgba(255,161,22,0.5); background: rgba(255,161,22,0.08); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(255,161,22,0.1); }
+    .cal-cell.cal-past-event { border-color: rgba(139,148,158,0.2); background: rgba(139,148,158,0.04); opacity: 0.65; cursor: pointer; }
+    .cal-cell.cal-past-event:hover { opacity: 0.9; }
+    .cal-cell.cal-today { border-color: var(--accent) !important; background: rgba(255,161,22,0.08) !important; box-shadow: 0 0 16px rgba(255,161,22,0.15); }
+
+    .cal-day-num { font-size: 12px; font-weight: 600; color: var(--muted); }
+    .cal-today .cal-day-num { color: var(--accent); font-weight: 800; }
+    .cal-dots { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 2px; }
+    .cal-dot { width: 6px; height: 6px; border-radius: 50%; }
+    .cal-item-count { font-size: 9px; font-weight: 700; color: var(--muted); margin-top: auto; font-family: 'JetBrains Mono', monospace; }
+
+    /* ── Day popup (replaces modal) ── */
+    #dayModal {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.72);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 1000;
+      align-items: center; justify-content: center;
+      padding: 16px;
+    }
+    #dayModal.open { display: flex; }
+
+    .modal-box {
+      background: #111113;
+      border: 1px solid rgba(63,63,70,0.45);
+      border-radius: 18px;
+      padding: 0;
+      width: 100%; max-width: 520px;
+      max-height: 85vh;
+      display: flex; flex-direction: column;
+      box-shadow: 0 32px 100px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,161,22,0.04);
+      animation: modalIn 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+      overflow: hidden;
+    }
+    @keyframes modalIn {
+      from { opacity:0; transform: scale(0.93) translateY(12px); }
+      to   { opacity:1; transform: scale(1)    translateY(0); }
+    }
+
+    .modal-header-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 22px 16px;
+      border-bottom: 1px solid rgba(63,63,70,0.2);
+      flex-shrink: 0;
+    }
+    .modal-date-label {
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .modal-date-main { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+    .modal-date-sub  { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+    .modal-close-btn {
+      width: 30px; height: 30px;
+      background: transparent; border: 1px solid rgba(63,63,70,0.3);
+      border-radius: 8px; color: var(--muted);
+      cursor: pointer; font-size: 14px;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s; flex-shrink: 0;
+    }
+    .modal-close-btn:hover { border-color: var(--text); color: var(--text); }
+
+    .modal-body-scroll { overflow-y: auto; padding: 16px 22px 22px; display: flex; flex-direction: column; gap: 10px; }
+
+    .modal-card {
+      display: block;
+      background: rgba(255,255,255,0.025);
+      border: 1px solid rgba(63,63,70,0.2);
+      border-radius: 12px; padding: 16px;
+      text-decoration: none; color: var(--text);
+      transition: all 0.2s;
+    }
+    .modal-card:hover { border-color: var(--border-hi); background: rgba(255,161,22,0.04); transform: translateX(2px); }
+    .modal-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .modal-card-title  { font-size: 14px; font-weight: 600; margin-bottom: 5px; line-height: 1.3; }
+    .modal-card-meta   { font-size: 11px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+    .modal-card-meta span { display: flex; align-items: center; gap: 4px; }
+    .modal-card-meta .material-symbols-outlined { font-size: 13px; }
+    .modal-card-open   { display: inline-flex; align-items: center; gap: 5px; margin-top: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); }
+    .modal-card-open .material-symbols-outlined { font-size: 13px; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Left Sidebar Nav (same as dashboard) ── -->
+  <nav class="sidebar-nav">
+    <!-- Brand -->
+    <div class="sidebar-brand">
+      <div class="brand-icon-box">
+        <span class="material-symbols-outlined">timer</span>
+      </div>
+      <span class="brand-name">LeetLens</span>
+    </div>
+
+    <!-- Nav links -->
+    <div style="padding: 0 16px; margin-bottom: 8px;">
+      <div class="nav-group-label">Core</div>
+    </div>
+    <div class="nav-links">
+      <a class="nav-link" id="navDashboard" href="#">
+        <span class="material-symbols-outlined">dashboard</span>
+        Overview
+      </a>
+      <a class="nav-link" id="navProblems" href="#">
+        <span class="material-symbols-outlined">list_alt</span>
+        Problems
+      </a>
+      <a class="nav-link active" href="#">
+        <span class="material-symbols-outlined">autorenew</span>
+        Revise
+      </a>
+
+      <div class="nav-group-label" style="margin-top: 24px;">Features Roadmap</div>
+
+      <div class="nav-roadmap-item">
+        <div class="inner"><span class="material-symbols-outlined">calendar_today</span> Review Schedule</div>
+        <span class="soon-badge">Soon</span>
+      </div>
+      <div class="nav-roadmap-item">
+        <div class="inner"><span class="material-symbols-outlined">sync</span> GitHub Sync</div>
+        <span class="soon-badge">Soon</span>
+      </div>
+      <div class="nav-roadmap-item">
+        <div class="inner"><span class="material-symbols-outlined">military_tech</span> Badges</div>
+        <span class="soon-badge">Soon</span>
+      </div>
+    </div>
+
+    <!-- Streak widget -->
+    <div class="streak-widget">
+      <div class="streak-inner">
+        <span class="streak-emoji">🔥</span>
+        <div>
+          <div class="streak-label">Active Streak</div>
+          <div class="streak-val" id="streakText">0 Days</div>
+        </div>
+      </div>
+      <span class="streak-active">Active</span>
+    </div>
+
+    <!-- Bottom action buttons -->
+    <div class="sidebar-actions">
+      <button class="sidebar-btn" id="btnExportData">
+        <span class="material-symbols-outlined">download</span>
+        Export Data
+      </button>
+      <button class="sidebar-btn danger" id="btnClearAll">
+        <span class="material-symbols-outlined">delete</span>
+        Clear Data
+      </button>
+    </div>
+  </nav>
+
+  <!-- ── Main Content ── -->
+  <div class="page-main">
+
+    <!-- Top bar -->
+    <header class="top-bar">
+      <span class="top-bar-title">Revision Schedule</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:#fba315;animation:pulse 2s infinite;display:inline-block;"></span>
+        <span style="font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--muted);">Spaced Repetition Active</span>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- Stats Strip -->
+      <div class="stats-strip">
+        <div class="stat-card total">
+          <div class="stat-label">Total Scheduled</div>
+          <div class="stat-value" id="statTotalRev">0</div>
+        </div>
+        <div class="stat-card overdue">
+          <div class="stat-label">Overdue</div>
+          <div class="stat-value" id="statOverdue">0</div>
+        </div>
+        <div class="stat-card today">
+          <div class="stat-label">Due Today</div>
+          <div class="stat-value" id="statToday">0</div>
+        </div>
+        <div class="stat-card upcoming">
+          <div class="stat-label">Upcoming</div>
+          <div class="stat-value" id="statUpcoming">0</div>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="legend">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;">Legend:</span>
+        <div class="legend-item"><div class="legend-dot" style="background:#ffa116;box-shadow:0 0 6px rgba(255,161,22,0.5)"></div> Today</div>
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(255,161,22,0.4);border:1px solid rgba(255,161,22,0.4)"></div> Upcoming</div>
+        <div class="legend-item"><div class="legend-dot" style="background:rgba(139,148,158,0.35)"></div> Past revision</div>
+        <div class="legend-item"><span class="revision-pill" style="background:rgba(0,165,114,0.12);color:#00a572;border:1px solid rgba(0,165,114,0.25)">R1</span> +2d</div>
+        <div class="legend-item"><span class="revision-pill" style="background:rgba(251,163,21,0.12);color:#fba315;border:1px solid rgba(251,163,21,0.25)">R2</span> +7d</div>
+        <div class="legend-item"><span class="revision-pill" style="background:rgba(255,180,171,0.12);color:#ffb4ab;border:1px solid rgba(255,180,171,0.25)">R3</span> +14d</div>
+        <div class="legend-item"><span class="revision-pill" style="background:rgba(139,148,158,0.12);color:#8b949e;border:1px solid rgba(139,148,158,0.25)">R4</span> +21d</div>
+      </div>
+
+      <!-- Today / Overdue Panel -->
+      <div class="urgent-panel">
+        <div class="section-heading">Today &amp; Overdue</div>
+        <div class="urgent-cards" id="todayPanel">
+          <div class="no-urgent"><span class="icon-lg">⏳</span><p>Loading…</p></div>
+        </div>
+      </div>
+
+      <!-- Calendar -->
+      <div class="cal-wrapper">
+        <div class="cal-header">
+          <span id="calMonthLabel" class="cal-month-label">Loading…</span>
+          <button id="btnToday"     class="cal-today-btn">Today</button>
+          <button id="btnPrevMonth" class="cal-nav-btn">‹</button>
+          <button id="btnNextMonth" class="cal-nav-btn">›</button>
+        </div>
+        <div class="cal-day-names">
+          <div class="cal-day-name">Sun</div><div class="cal-day-name">Mon</div>
+          <div class="cal-day-name">Tue</div><div class="cal-day-name">Wed</div>
+          <div class="cal-day-name">Thu</div><div class="cal-day-name">Fri</div>
+          <div class="cal-day-name">Sat</div>
+        </div>
+        <div id="calGrid"></div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /page-main -->
+
+  <!-- ── Day-detail Popup ── -->
+  <div id="dayModal">
+    <div class="modal-box">
+      <div class="modal-header-bar">
+        <div class="modal-date-label">
+          <div class="modal-date-main" id="modalDateMain"></div>
+          <div class="modal-date-sub"  id="modalDateSub"></div>
+        </div>
+        <button class="modal-close-btn" id="modalClose">✕</button>
+      </div>
+      <div class="modal-body-scroll" id="modalBody"></div>
+    </div>
+  </div>
+
+  <style>
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  </style>
+
+  <script src="revision.js"></script>
+  <script>
+    // Wire up nav links → navigate back to dashboard.html with a view hash
+    document.getElementById('navDashboard').addEventListener('click', (e) => {
+      e.preventDefault();
+      window.location.href = chrome.runtime.getURL('dashboard.html') + '#overview';
+    });
+    document.getElementById('navProblems').addEventListener('click', (e) => {
+      e.preventDefault();
+      window.location.href = chrome.runtime.getURL('dashboard.html') + '#problems';
+    });
+
+    // Export
+    document.getElementById('btnExportData').addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'GET_RECORDS' }, res => {
+        const data = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(res?.records || {}, null, 2));
+        const a = document.createElement('a');
+        a.href = data; a.download = 'leetlens_backup.json';
+        document.body.appendChild(a); a.click(); a.remove();
+      });
+    });
+
+    // Clear all
+    document.getElementById('btnClearAll').addEventListener('click', () => {
+      if (confirm('Delete ALL tracked data? This cannot be undone.')) {
+        chrome.runtime.sendMessage({ type: 'CLEAR_ALL' }, () => location.reload());
+      }
+    });
+  </script>
+</body>
+</html>

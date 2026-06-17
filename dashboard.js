@@ -1,0 +1,943 @@
+// dashboard.js — Dashboard UI, view routing, and real-time updates
+
+// ── utilities ──────────────────────────────────────────────────────────────
+function formatTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+
+  if (h > 0) return `${h}h ${m % 60}m`;
+  if (m > 0) return `${m}m ${s % 60}s`;
+  return `${s}s`;
+}
+
+function getStatusEmoji(solved) {
+  return solved ? '✓' : '◇';
+}
+
+// ── state ──────────────────────────────────────────────────────────────────
+let allRecords = {};
+let currentFilter = 'all';
+let searchQuery = '';
+let currentSortField = 'lastSeen';
+let currentSortDirection = 'desc';
+let currentView = 'overview';
+
+// ── view routing ───────────────────────────────────────────────────────────
+const VIEW_TITLES = {
+  overview: 'Analytics Dashboard',
+  problems: 'Tracked Problems',
+  revise:   'Revision Schedule',
+  signin:   'Sign In',
+  profile:  'Profile',
+  striver:  'A2Z Striver Sheet',
+  plan:     'Weekly Plan',
+  analytics: 'Analytics',
+  github:   'GitHub Sync'
+};
+
+function switchView(viewId) {
+  if (currentView === viewId) return;
+  currentView = viewId;
+
+  // Hide all panels
+  document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+
+  // Show target panel
+  const panel = document.getElementById(`view-${viewId}`);
+  if (panel) panel.classList.add('active');
+
+  // Update nav active state
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.view === viewId);
+  });
+
+  // Update top bar title
+  const titleEl = document.getElementById('topBarTitle');
+  if (titleEl) titleEl.textContent = VIEW_TITLES[viewId] || 'Dashboard';
+
+  // Update hash without reload
+  if (history.replaceState) {
+    history.replaceState(null, '', `#${viewId}`);
+  }
+
+  // If switching to revise, render revision view with latest data
+  if (viewId === 'revise') {
+    revScheduleMap = buildRevSchedule(allRecords);
+    renderRevStats();
+    renderRevTodayPanel();
+    renderRevCalendar();
+  }
+  if (viewId === 'striver' && window.LeetLensStriver) {
+    window.LeetLensStriver.render();
+  }
+  if (viewId === 'plan' && window.LeetLensPlan) {
+    window.LeetLensPlan.render();
+  }
+  if (viewId === 'analytics' && window.LeetLensAnalytics) {
+    window.LeetLensAnalytics.render();
+  }
+  if (viewId === 'github' && window.LeetLensGitHub) {
+    window.LeetLensGitHub.render(window.LeetLensCloud?.getCloudState() || {});
+  }
+  if (viewId === 'signin' && window.LeetLensCloudUI) {
+    window.LeetLensCloudUI.renderAll(window.LeetLensCloud?.getCloudState() || {});
+  }
+  if (viewId === 'profile' && window.LeetLensCloudUI) {
+    window.LeetLensCloudUI.renderAll(window.LeetLensCloud?.getCloudState() || {});
+  }
+  if (viewId === 'overview') {
+    if (window.LeetLensCloudUI) window.LeetLensCloudUI.renderSyncHub(window.LeetLensCloud?.getCloudState() || {});
+    if (window.LeetLensAnalytics) window.LeetLensAnalytics.renderRecentActivity();
+    if (window.LeetLensStriver) window.LeetLensStriver.renderOverviewWidget();
+    if (window.LeetLensPlan) window.LeetLensPlan.renderOverviewWidget();
+    if (window.LeetLensHeatmap && window.LeetLensCloud) {
+      window.LeetLensHeatmap.render(window.LeetLensCloud.getCloudState());
+    }
+  }
+}
+
+// Expose for cloud UI navigation
+window.switchView = switchView;
+
+// ── update stats ───────────────────────────────────────────────────────────
+function updateStats() {
+  const stats = {
+    total: Object.keys(allRecords).length,
+    easy: { total: 0, solved: 0 },
+    medium: { total: 0, solved: 0 },
+    hard: { total: 0, solved: 0 }
+  };
+
+  Object.values(allRecords).forEach(record => {
+    const diff = (record.difficulty || 'Easy').toLowerCase();
+    if (stats[diff]) {
+      stats[diff].total++;
+      if (record.solved) stats[diff].solved++;
+    }
+  });
+
+  document.getElementById('statTotal').textContent = stats.total;
+  document.getElementById('statEasySolved').textContent = stats.easy.solved;
+  document.getElementById('statEasyTotal').textContent = `of ${stats.easy.total}`;
+  document.getElementById('statMediumSolved').textContent = stats.medium.solved;
+  document.getElementById('statMediumTotal').textContent = `of ${stats.medium.total}`;
+  document.getElementById('statHardSolved').textContent = stats.hard.solved;
+  document.getElementById('statHardTotal').textContent = `of ${stats.hard.total}`;
+
+  // Update active coding streak
+  const streak = getStreak(allRecords);
+  const streakTextEl = document.getElementById('streakText');
+  if (streakTextEl) {
+    streakTextEl.textContent = `${streak} Day${streak === 1 ? '' : 's'}`;
+  }
+}
+
+// ── calculate streak ────────────────────────────────────────────────────────
+function getStreak(records) {
+  const dates = Object.values(records)
+    .map(r => new Date(r.lastSeen).toDateString())
+    .filter((v, i, a) => a.indexOf(v) === i); // unique dates
+
+  if (dates.length === 0) return 0;
+
+  const dateObjects = dates.map(d => new Date(d));
+  // sort descending (most recent date first)
+  dateObjects.sort((a, b) => b - a);
+
+  let streak = 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  // Check if the most recent active date is today or yesterday
+  const currentCheck = dateObjects[0];
+  const diffFromToday = Math.round((today - currentCheck) / (1000 * 60 * 60 * 24));
+
+  if (diffFromToday > 1) {
+    // Coding streak is broken (most recent activity is older than yesterday)
+    return 0;
+  }
+
+  streak = 1;
+  for (let i = 0; i < dateObjects.length - 1; i++) {
+    const diff = Math.round((dateObjects[i] - dateObjects[i + 1]) / (1000 * 60 * 60 * 24));
+    if (diff === 1) {
+      streak++;
+    } else if (diff > 1) {
+      break;
+    }
+  }
+  return streak;
+}
+
+// ── update charts ──────────────────────────────────────────────────────────
+function updateCharts() {
+  // 1. Donut Chart
+  const stats = {
+    easy: 0,
+    medium: 0,
+    hard: 0
+  };
+
+  Object.values(allRecords).forEach(record => {
+    if (record.solved) {
+      const diff = (record.difficulty || 'Easy').toLowerCase();
+      if (stats[diff] !== undefined) {
+        stats[diff]++;
+      }
+    }
+  });
+
+  const totalSolved = stats.easy + stats.medium + stats.hard;
+  const chartTotalCountEl = document.getElementById('chartTotalCount');
+  if (chartTotalCountEl) chartTotalCountEl.textContent = totalSolved;
+
+  const legEasy = document.getElementById('legendEasyVal');
+  const legMed = document.getElementById('legendMediumVal');
+  const legHard = document.getElementById('legendHardVal');
+  if (legEasy) legEasy.textContent = stats.easy;
+  if (legMed) legMed.textContent = stats.medium;
+  if (legHard) legHard.textContent = stats.hard;
+
+  const circleEasy = document.querySelector('.segment-easy');
+  const circleMedium = document.querySelector('.segment-medium');
+  const circleHard = document.querySelector('.segment-hard');
+
+  if (circleEasy && circleMedium && circleHard) {
+    const C = 251.3; // Circumference for r=40
+    if (totalSolved === 0) {
+      circleEasy.style.strokeDasharray = `0 ${C}`;
+      circleMedium.style.strokeDasharray = `0 ${C}`;
+      circleHard.style.strokeDasharray = `0 ${C}`;
+    } else {
+      const pEasy = stats.easy / totalSolved;
+      const pMedium = stats.medium / totalSolved;
+      const pHard = stats.hard / totalSolved;
+
+      const lEasy = pEasy * C;
+      const lMedium = pMedium * C;
+      const lHard = pHard * C;
+
+      circleEasy.style.strokeDasharray = `${lEasy} ${C - lEasy}`;
+      circleEasy.style.strokeDashoffset = `0`;
+
+      circleMedium.style.strokeDasharray = `${lMedium} ${C - lMedium}`;
+      circleMedium.style.strokeDashoffset = `-${lEasy}`;
+
+      circleHard.style.strokeDasharray = `${lHard} ${C - lHard}`;
+      circleHard.style.strokeDashoffset = `-${lEasy + lMedium}`;
+    }
+  }
+
+  // 2. Top 5 Most Practiced Problems Chart
+  const topProblemsContent = document.getElementById('topProblemsChart');
+  if (topProblemsContent) {
+    const sortedByTime = Object.values(allRecords)
+      .sort((a, b) => (b.totalMs || 0) - (a.totalMs || 0))
+      .slice(0, 5);
+
+    if (sortedByTime.length === 0) {
+      topProblemsContent.innerHTML = `
+        <div class="empty-state" style="padding: 20px;">
+          <div class="empty-state-icon">📊</div>
+          <p>No data available yet.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const maxTime = sortedByTime[0].totalMs || 1;
+
+    let html = '<div class="bar-chart-container">';
+    sortedByTime.forEach(record => {
+      const percentage = ((record.totalMs || 0) / maxTime) * 100;
+      const formattedTime = formatTime(record.totalMs || 0);
+      const difficulty = (record.difficulty || 'Easy').toLowerCase();
+
+      html += `
+        <div class="bar-row">
+          <div class="bar-info">
+            <span class="bar-problem-title" title="${record.title || record.slug}">${record.title || record.slug}</span>
+            <span class="bar-problem-time">${formattedTime}</span>
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill ${difficulty}" style="width: ${percentage}%"></div>
+          </div>
+        </div>
+      `;
+    });
+    html += '</div>';
+    topProblemsContent.innerHTML = html;
+  }
+}
+
+// ── filter & render table ──────────────────────────────────────────────────
+function shouldShowRecord(record) {
+  if (currentFilter === 'all') return true;
+  if (currentFilter === 'solved') return record.solved;
+  if (currentFilter === 'pending') return !record.solved;
+  if (currentFilter === 'easy') return record.difficulty === 'Easy';
+  if (currentFilter === 'medium') return record.difficulty === 'Medium';
+  if (currentFilter === 'hard') return record.difficulty === 'Hard';
+  return true;
+}
+
+function renderProblems() {
+  const contentDiv = document.getElementById('problemsContent');
+  
+  // Filter by status/difficulty
+  let problems = Object.values(allRecords).filter(shouldShowRecord);
+  
+  // Filter by search query
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase().trim();
+    problems = problems.filter(r => 
+      (r.title && r.title.toLowerCase().includes(q)) || 
+      (r.slug && r.slug.toLowerCase().includes(q)) ||
+      (r.difficulty && r.difficulty.toLowerCase().includes(q))
+    );
+  }
+
+  // Sort
+  problems.sort((a, b) => {
+    let valA, valB;
+    if (currentSortField === 'title') {
+      valA = (a.title || a.slug || '').toLowerCase();
+      valB = (b.title || b.slug || '').toLowerCase();
+    } else if (currentSortField === 'solved') {
+      valA = a.solved ? 1 : 0;
+      valB = b.solved ? 1 : 0;
+    } else if (currentSortField === 'difficulty') {
+      const diffOrder = { easy: 1, medium: 2, hard: 3, unknown: 4 };
+      valA = diffOrder[(a.difficulty || 'Easy').toLowerCase()] || 4;
+      valB = diffOrder[(b.difficulty || 'Easy').toLowerCase()] || 4;
+    } else if (currentSortField === 'totalMs') {
+      valA = a.totalMs || 0;
+      valB = b.totalMs || 0;
+    } else if (currentSortField === 'stars') {
+      valA = a.stars || 0;
+      valB = b.stars || 0;
+    } else { // default 'lastSeen'
+      valA = a.lastSeen || 0;
+      valB = b.lastSeen || 0;
+    }
+
+    if (valA < valB) return currentSortDirection === 'asc' ? -1 : 1;
+    if (valA > valB) return currentSortDirection === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  document.getElementById('problemsCount').textContent = problems.length;
+
+  if (problems.length === 0) {
+    contentDiv.innerHTML = `
+      <tr>
+        <td colspan="7" class="text-center py-12 text-on-surface-variant/40">
+          <span class="material-symbols-outlined text-3xl">search_off</span>
+          <p class="text-sm mt-3">No matching problems found.</p>
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  let html = '';
+  problems.forEach((record, idx) => {
+    const statusClass = record.solved ? 'status-solved' : 'status-pending';
+    const statusText = record.solved ? '✓ Solved' : '◇ Pending';
+    const diffClass = `difficulty-${record.difficulty || 'Easy'}`;
+    
+    // Star HTML
+    let starsHtml = `<div class="problem-stars-interactive" data-slug="${record.slug}">`;
+    for (let i = 1; i <= 5; i++) {
+      const isLit = i <= (record.stars || 0) ? 'lit' : 'dim';
+      starsHtml += `<span class="table-star ${isLit}" data-val="${i}">★</span>`;
+    }
+    starsHtml += '</div>';
+
+    html += `
+      <tr>
+        <td class="problem-num font-semibold text-on-surface-variant/60">${idx + 1}</td>
+        <td>
+          <a href="https://leetcode.com/problems/${record.slug}/" target="_blank" class="table-problem-link">
+            ${record.title || record.slug}
+          </a>
+        </td>
+        <td>
+          <span class="status-badge ${statusClass}">${statusText}</span>
+        </td>
+        <td>
+          <span class="difficulty-badge ${diffClass}">${record.difficulty || 'Easy'}</span>
+        </td>
+        <td class="problem-time">${formatTime(record.totalMs || 0)}</td>
+        <td>
+          ${starsHtml}
+        </td>
+        <td>
+          <div class="flex items-center gap-2">
+            <button class="action-btn ${record.solved ? 'solved' : ''}" 
+                    data-slug="${record.slug}" 
+                    data-solved="${!record.solved}">
+              ${record.solved ? '✓ Solved' : 'Mark Solved'}
+            </button>
+            <button class="btn-delete-row" title="Delete record" data-slug="${record.slug}">
+              <span class="material-symbols-outlined text-[16px]">delete</span>
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+
+  contentDiv.innerHTML = html;
+
+  // Programmatic event listeners for table interactivity
+  contentDiv.querySelectorAll('.table-star').forEach(star => {
+    star.addEventListener('click', (e) => {
+      const parent = e.target.parentElement;
+      const slug = parent.dataset.slug;
+      const val = parseInt(e.target.dataset.val, 10);
+      setStarsTable(slug, val);
+    });
+  });
+
+  contentDiv.querySelectorAll('.action-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const slug = e.currentTarget.dataset.slug;
+      const solved = e.currentTarget.dataset.solved === 'true';
+      toggleSolved(slug, solved);
+    });
+  });
+
+  contentDiv.querySelectorAll('.btn-delete-row').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const slug = e.currentTarget.dataset.slug;
+      deleteProblemTable(slug);
+    });
+  });
+
+  updateSortIcons();
+}
+
+// ── toggle solved status ────────────────────────────────────────────────────
+function toggleSolved(slug, solved) {
+  // Optimistic update: reflect change immediately in UI
+  if (allRecords[slug]) {
+    allRecords[slug].solved = solved;
+    allRecords[slug].solvedAt = solved ? Date.now() : null;
+    renderProblems();
+    updateStats();
+    updateCharts();
+  }
+  // Then sync with background
+  const msgType = solved ? 'MARK_SOLVED' : 'MARK_PENDING';
+  chrome.runtime.sendMessage({ type: msgType, slug }, () => {
+    loadData(); // final sync to confirm persisted state
+  });
+}
+
+function setStarsTable(slug, stars) {
+  // Optimistic update: reflect star change immediately
+  if (allRecords[slug]) {
+    allRecords[slug].stars = stars;
+    renderProblems();
+  }
+  chrome.runtime.sendMessage({ type: 'SET_STARS', slug, stars }, () => {
+    loadData();
+  });
+}
+
+function deleteProblemTable(slug) {
+  if (confirm(`Are you sure you want to delete the record for "${slug}"?`)) {
+    // Optimistic update: remove row immediately
+    delete allRecords[slug];
+    renderProblems();
+    updateStats();
+    updateCharts();
+    chrome.runtime.sendMessage({ type: 'DELETE_RECORD', slug }, () => {
+      loadData();
+    });
+  }
+}
+
+function updateSortIcons() {
+  document.querySelectorAll('.sortable-header').forEach(header => {
+    const field = header.dataset.sort;
+    const iconEl = header.querySelector('.sort-icon');
+    if (!iconEl) return;
+
+    if (currentSortField === field) {
+      iconEl.innerHTML = currentSortDirection === 'asc' ? ' ▲' : ' ▼';
+      iconEl.style.opacity = '1';
+      iconEl.classList.add('text-primary');
+    } else {
+      iconEl.innerHTML = ' ↕';
+      iconEl.style.opacity = '0.4';
+      iconEl.classList.remove('text-primary');
+    }
+  });
+}
+
+// ── load data from background ──────────────────────────────────────────────
+async function loadData() {
+  return new Promise(resolve => {
+    chrome.runtime.sendMessage({ type: 'GET_DATA' }, response => {
+      if (response && response.records) {
+        allRecords = response.records;
+        updateStats();
+        updateCharts();
+        renderProblems();
+        // If revise view is active, also refresh it
+        if (currentView === 'revise') {
+          revScheduleMap = buildRevSchedule(allRecords);
+          renderRevStats();
+          renderRevTodayPanel();
+          renderRevCalendar();
+        }
+      }
+      resolve();
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ── REVISION VIEW LOGIC (ported from revision.js) ─────────────────
+// ══════════════════════════════════════════════════════════════════
+
+const REV_OFFSETS = [2, 7, 14, 21];
+const REV_LABELS  = ['R1', 'R2', 'R3', 'R4'];
+const REV_DIFF_COLORS = {
+  Easy:    { bg: 'rgba(0,165,114,0.12)',   text: '#00a572', border: 'rgba(0,165,114,0.25)' },
+  Medium:  { bg: 'rgba(251,163,21,0.12)',  text: '#fba315', border: 'rgba(251,163,21,0.25)' },
+  Hard:    { bg: 'rgba(255,180,171,0.12)', text: '#ffb4ab', border: 'rgba(255,180,171,0.25)' },
+  Unknown: { bg: 'rgba(139,148,158,0.12)', text: '#8b949e', border: 'rgba(139,148,158,0.25)' },
+};
+
+let revViewYear  = new Date().getFullYear();
+let revViewMonth = new Date().getMonth();
+let revScheduleMap = {};
+
+function revToDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+function revTodayKey() { return revToDateKey(new Date()); }
+function revAddDays(ts, days) {
+  const d = new Date(ts);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+function revFmtDate(date) {
+  return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function revFmtTime(date) {
+  return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+function revDaysBetween(dateA, dateB) {
+  return Math.round((dateA - dateB) / (1000 * 60 * 60 * 24));
+}
+
+function buildRevSchedule(records) {
+  const map = {};
+  Object.values(records).forEach(rec => {
+    if (!rec.solved || !rec.solvedAt) return;
+    REV_OFFSETS.forEach((offset, i) => {
+      const revDate = revAddDays(rec.solvedAt, offset);
+      const key     = revToDateKey(revDate);
+      if (!map[key]) map[key] = [];
+      map[key].push({
+        slug:       rec.slug,
+        title:      rec.title || rec.slug,
+        difficulty: rec.difficulty || 'Unknown',
+        revision:   REV_LABELS[i],
+        revDate,
+        solvedAt:   rec.solvedAt,
+        offset,
+      });
+    });
+  });
+  return map;
+}
+
+function renderRevStats() {
+  const tk    = revTodayKey();
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  let total = 0, overdue = 0, todayC = 0, upcoming = 0;
+
+  Object.entries(revScheduleMap).forEach(([key, items]) => {
+    const d = new Date(key + 'T00:00:00');
+    total += items.length;
+    if (key === tk)     todayC  += items.length;
+    else if (d < today) overdue += items.length;
+    else                upcoming += items.length;
+  });
+
+  const el = (id) => document.getElementById(id);
+  if (el('revStatTotal'))    el('revStatTotal').textContent    = total;
+  if (el('revStatOverdue'))  el('revStatOverdue').textContent  = overdue;
+  if (el('revStatToday'))    el('revStatToday').textContent    = todayC;
+  if (el('revStatUpcoming')) el('revStatUpcoming').textContent = upcoming;
+}
+
+function renderRevTodayPanel() {
+  const container = document.getElementById('revTodayPanel');
+  if (!container) return;
+
+  const tk    = revTodayKey();
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+
+  const overdue  = [];
+  const dueToday = revScheduleMap[tk] || [];
+
+  Object.entries(revScheduleMap).forEach(([key, items]) => {
+    const d = new Date(key + 'T00:00:00');
+    if (d < today) overdue.push(...items);
+  });
+
+  if (overdue.length === 0 && dueToday.length === 0) {
+    container.innerHTML = `<div class="rev-no-urgent"><span class="rev-icon-lg">🎉</span><p>No revisions due today. Keep it up!</p></div>`;
+    return;
+  }
+
+  let html = '';
+  if (overdue.length > 0) {
+    html += `<div class="rev-urgent-group-title rev-overdue-title">⚠ Overdue</div>`;
+    overdue.forEach(item => {
+      const daysLate = revDaysBetween(today, new Date(revToDateKey(item.revDate) + 'T00:00:00'));
+      const dc = REV_DIFF_COLORS[item.difficulty] || REV_DIFF_COLORS.Unknown;
+      html += revUrgentCard(item, dc, `${Math.abs(daysLate)} day${Math.abs(daysLate) !== 1 ? 's' : ''} overdue`, 'overdue');
+    });
+  }
+  if (dueToday.length > 0) {
+    html += `<div class="rev-urgent-group-title rev-today-title">📅 Due Today</div>`;
+    dueToday.forEach(item => {
+      const dc = REV_DIFF_COLORS[item.difficulty] || REV_DIFF_COLORS.Unknown;
+      html += revUrgentCard(item, dc, 'Due today', 'due-today');
+    });
+  }
+  container.innerHTML = html;
+}
+
+function revUrgentCard(item, dc, label, cls) {
+  const solvedDate = revFmtDate(new Date(item.solvedAt));
+  const solvedTime = revFmtTime(new Date(item.solvedAt));
+  return `<a href="https://leetcode.com/problems/${item.slug}/" target="_blank" class="rev-urgent-card ${cls}">
+    <div class="rev-urgent-card-top">
+      <span class="revision-pill" style="background:${dc.bg};color:${dc.text};border:1px solid ${dc.border}">${item.revision}</span>
+      <span class="diff-pill" style="background:${dc.bg};color:${dc.text};border:1px solid ${dc.border}">${item.difficulty}</span>
+      <span class="rev-urgent-label">${label}</span>
+    </div>
+    <div class="rev-urgent-card-title">${item.title}</div>
+    <div class="rev-urgent-card-meta">Solved ${solvedDate} at ${solvedTime} · +${item.offset} days</div>
+  </a>`;
+}
+
+const REV_MONTH_NAMES = ['January','February','March','April','May','June',
+                         'July','August','September','October','November','December'];
+
+function renderRevCalendar() {
+  const monthLabel = document.getElementById('revCalMonthLabel');
+  if (!monthLabel) return;
+  monthLabel.textContent = `${REV_MONTH_NAMES[revViewMonth]} ${revViewYear}`;
+
+  const today  = new Date(); today.setHours(0, 0, 0, 0);
+  const todayK = revTodayKey();
+
+  const firstDay    = new Date(revViewYear, revViewMonth, 1).getDay();
+  const daysInMonth = new Date(revViewYear, revViewMonth + 1, 0).getDate();
+
+  const grid = document.getElementById('revCalGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  for (let i = 0; i < firstDay; i++) {
+    const blank = document.createElement('div');
+    blank.className = 'rev-cal-cell empty';
+    grid.appendChild(blank);
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const cellDate = new Date(revViewYear, revViewMonth, d);
+    const key      = revToDateKey(cellDate);
+    const items    = revScheduleMap[key] || [];
+    const isToday  = key === todayK;
+    const isPast   = cellDate < today && !isToday;
+    const hasItems = items.length > 0;
+
+    const cell = document.createElement('div');
+    cell.className = 'rev-cal-cell';
+    if (isToday)                cell.classList.add('cal-today');
+    else if (isPast && hasItems) cell.classList.add('cal-past-event');
+    else if (hasItems)           cell.classList.add('cal-future-event');
+    else if (isPast)             cell.classList.add('cal-past');
+
+    cell.dataset.dateKey = key;
+
+    const dayNum = document.createElement('span');
+    dayNum.className = 'rev-cal-day-num';
+    dayNum.textContent = d;
+    cell.appendChild(dayNum);
+
+    if (hasItems) {
+      const dotsRow = document.createElement('div');
+      dotsRow.className = 'rev-cal-dots';
+      const seen = {};
+      items.forEach(it => { seen[it.revision] = it; });
+      Object.values(seen).forEach(it => {
+        const dc  = REV_DIFF_COLORS[it.difficulty] || REV_DIFF_COLORS.Unknown;
+        const dot = document.createElement('span');
+        dot.className = 'rev-cal-dot';
+        dot.style.background = dc.text;
+        dotsRow.appendChild(dot);
+      });
+      cell.appendChild(dotsRow);
+
+      const badge = document.createElement('span');
+      badge.className = 'rev-cal-item-count';
+      badge.textContent = `${items.length} problem${items.length !== 1 ? 's' : ''}`;
+      cell.appendChild(badge);
+    }
+
+    grid.appendChild(cell);
+  }
+}
+
+function openRevDayModal(key) {
+  const items = revScheduleMap[key];
+  if (!items || items.length === 0) return;
+
+  const cellDate = new Date(key + 'T00:00:00');
+  const today    = new Date(); today.setHours(0, 0, 0, 0);
+  const daysAway = revDaysBetween(cellDate, today);
+
+  const dayName = cellDate.toLocaleDateString('en-US', { weekday: 'long' });
+  const dateStr = cellDate.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  let relLabel;
+  if (daysAway === 0)    relLabel = 'Today';
+  else if (daysAway > 0) relLabel = `In ${daysAway} day${daysAway !== 1 ? 's' : ''}`;
+  else                   relLabel = `${Math.abs(daysAway)} day${Math.abs(daysAway) !== 1 ? 's' : ''} ago`;
+
+  document.getElementById('revModalDateMain').textContent = `${dayName}, ${dateStr}`;
+  document.getElementById('revModalDateSub').textContent  =
+    `${items.length} revision${items.length !== 1 ? 's' : ''} · ${relLabel}`;
+
+  const body = document.getElementById('revModalBody');
+  body.innerHTML = '';
+
+  items.forEach(item => {
+    const dc   = REV_DIFF_COLORS[item.difficulty] || REV_DIFF_COLORS.Unknown;
+    const card = document.createElement('a');
+    card.href   = `https://leetcode.com/problems/${item.slug}/`;
+    card.target = '_blank';
+    card.className = 'rev-modal-card';
+
+    card.innerHTML = `
+      <div class="rev-modal-card-header">
+        <span class="revision-pill" style="background:${dc.bg};color:${dc.text};border:1px solid ${dc.border}">${item.revision}</span>
+        <span class="diff-pill"     style="background:${dc.bg};color:${dc.text};border:1px solid ${dc.border}">${item.difficulty}</span>
+      </div>
+      <div class="rev-modal-card-title">${item.title}</div>
+      <div class="rev-modal-card-meta">
+        <span><span class="material-symbols-outlined" style="font-size:13px;vertical-align:middle">check_circle</span>&nbsp;Solved ${revFmtDate(new Date(item.solvedAt))} at ${revFmtTime(new Date(item.solvedAt))}</span>
+        <span><span class="material-symbols-outlined" style="font-size:13px;vertical-align:middle">schedule</span>&nbsp;+${item.offset}-day interval</span>
+      </div>
+      <div class="rev-modal-card-open">
+        <span class="material-symbols-outlined" style="font-size:13px">open_in_new</span>
+        Open on LeetCode
+      </div>`;
+
+    body.appendChild(card);
+  });
+
+  document.getElementById('revDayModal').classList.add('open');
+}
+
+function closeRevModal() {
+  document.getElementById('revDayModal').classList.remove('open');
+}
+
+// ── event listeners ────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+
+  // ── Nav view switching ──
+  document.querySelectorAll('.nav-item[data-view]').forEach(item => {
+    item.addEventListener('click', () => {
+      switchView(item.dataset.view);
+    });
+  });
+
+  // Mobile nav uses same handler (already covered by .nav-item[data-view])
+
+  // Filter buttons
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      currentFilter = e.target.dataset.filter;
+      renderProblems();
+    });
+  });
+
+  // Search input listener
+  const searchInput = document.getElementById('searchProblems');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      searchQuery = e.target.value;
+      renderProblems();
+    });
+  }
+
+  // Sortable headers listener
+  document.querySelectorAll('.sortable-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const field = header.dataset.sort;
+      if (currentSortField === field) {
+        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+      } else {
+        currentSortField = field;
+        currentSortDirection = 'asc';
+      }
+      renderProblems();
+    });
+  });
+
+  // Clear all buttons (desktop & mobile)
+  const clearHandler = () => {
+    if (confirm('Are you sure? This will delete all tracked data.')) {
+      chrome.runtime.sendMessage({ type: 'CLEAR_ALL' }, () => {
+        allRecords = {};
+        updateStats();
+        updateCharts();
+        renderProblems();
+        if (currentView === 'revise') {
+          revScheduleMap = {};
+          renderRevStats();
+          renderRevTodayPanel();
+          renderRevCalendar();
+        }
+      });
+    }
+  };
+
+  const btnClearAll = document.getElementById('btnClearAll');
+  if (btnClearAll) btnClearAll.addEventListener('click', clearHandler);
+
+  const btnClearAllMobile = document.getElementById('btnClearAllMobile');
+  if (btnClearAllMobile) btnClearAllMobile.addEventListener('click', clearHandler);
+
+  // Export Data button
+  const btnExportData = document.getElementById('btnExportData');
+  if (btnExportData) {
+    btnExportData.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'GET_RECORDS' }, response => {
+        const records = response?.records || {};
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(records, null, 2));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", "leettrack_backup.json");
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+      });
+    });
+  }
+
+  // ── Revision calendar controls ──
+  const revBtnPrev = document.getElementById('revBtnPrevMonth');
+  if (revBtnPrev) {
+    revBtnPrev.addEventListener('click', () => {
+      revViewMonth--;
+      if (revViewMonth < 0) { revViewMonth = 11; revViewYear--; }
+      renderRevCalendar();
+    });
+  }
+  const revBtnNext = document.getElementById('revBtnNextMonth');
+  if (revBtnNext) {
+    revBtnNext.addEventListener('click', () => {
+      revViewMonth++;
+      if (revViewMonth > 11) { revViewMonth = 0; revViewYear++; }
+      renderRevCalendar();
+    });
+  }
+  const revBtnToday = document.getElementById('revBtnToday');
+  if (revBtnToday) {
+    revBtnToday.addEventListener('click', () => {
+      revViewYear  = new Date().getFullYear();
+      revViewMonth = new Date().getMonth();
+      renderRevCalendar();
+    });
+  }
+
+  // Revision calendar click (event delegation)
+  const revCalGrid = document.getElementById('revCalGrid');
+  if (revCalGrid) {
+    revCalGrid.addEventListener('click', e => {
+      const cell = e.target.closest('.rev-cal-cell[data-date-key]');
+      if (!cell) return;
+      openRevDayModal(cell.dataset.dateKey);
+    });
+  }
+
+  // Revision modal close
+  const revDayModal = document.getElementById('revDayModal');
+  if (revDayModal) {
+    revDayModal.addEventListener('click', e => {
+      if (e.target === revDayModal) closeRevModal();
+    });
+  }
+  const revModalClose = document.getElementById('revModalClose');
+  if (revModalClose) revModalClose.addEventListener('click', closeRevModal);
+
+  // Escape key closes revision modal
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeRevModal();
+  });
+
+  // ── Hash-based initial view (e.g. navigating back from revision.html) ──
+  const hashView = window.location.hash.replace('#', '');
+  if (hashView && ['overview', 'problems', 'revise', 'signin', 'profile', 'striver', 'plan', 'analytics'].includes(hashView)) {
+    switchView(hashView);
+  }
+
+  // Initial load
+  loadData();
+
+  // Cloud sync listeners
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'CLOUD_MARK_SOLVED' && window.LeetLensCloud?.getCloudState()?.user) {
+      window.LeetLensCloud.onProblemSolved(msg.record);
+      if (window.LeetLensStriver) window.LeetLensStriver.renderOverviewWidget();
+      if (window.LeetLensPlan) window.LeetLensPlan.renderOverviewWidget();
+    }
+    if (msg.type === 'SAVE_ACTIVITY' && window.LeetLensCloud?.getCloudState()?.user) {
+      window.LeetLensCloud.saveProblemActivity(msg.activity);
+    }
+  });
+
+  // Listen for updates from background
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg.type === 'DASHBOARD_UPDATE') {
+      allRecords = msg.records;
+      updateStats();
+      updateCharts();
+      renderProblems();
+      if (currentView === 'revise') {
+        revScheduleMap = buildRevSchedule(allRecords);
+        renderRevStats();
+        renderRevTodayPanel();
+        renderRevCalendar();
+      }
+      if (currentView === 'overview' && window.LeetLensAnalytics) {
+        window.LeetLensAnalytics.renderRecentActivity();
+      }
+    }
+  });
+
+  // Refresh data every 2 seconds to catch updates
+  setInterval(() => {
+    loadData();
+  }, 2000);
+});
