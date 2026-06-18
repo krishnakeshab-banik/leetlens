@@ -94,12 +94,8 @@
   "externally_connectable": {
     "matches": [
       "https://*.vercel.app/*",
-      "https://leetlens.srminsider.in/*",
-      "https://*.srminsider.in/*",
       "http://localhost/*",
-      "https://localhost/*",
-      "http://127.0.0.1/*",
-      "https://127.0.0.1/*"
+      "https://localhost/*"
     ]
   }
 }
