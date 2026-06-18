@@ -20,6 +20,43 @@
     localStorage.setItem(key, JSON.stringify(value));
   }
 
+  const storage = {
+    local: {
+      get(keys, cb) {
+        const out = {};
+        const list = Array.isArray(keys) ? keys : keys ? [keys] : Object.keys(localStorage);
+        list.forEach(k => {
+          const v = localStorage.getItem(k);
+          if (v != null) {
+            try { out[k] = JSON.parse(v); } catch (_) { out[k] = v; }
+          }
+        });
+        if (typeof cb === 'function') cb(out);
+        return Promise.resolve(out);
+      },
+      set(obj, cb) {
+        Object.entries(obj).forEach(([k, v]) => {
+          localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+        });
+        if (typeof cb === 'function') cb();
+        return Promise.resolve();
+      },
+      remove(keys, cb) {
+        (Array.isArray(keys) ? keys : [keys]).forEach(k => localStorage.removeItem(k));
+        if (typeof cb === 'function') cb();
+        return Promise.resolve();
+      }
+    }
+  };
+
+  // Page has Chrome extension messaging injected — keep native runtime, add storage shim
+  if (typeof chrome !== 'undefined' && typeof chrome.runtime?.sendMessage === 'function' && !chrome.runtime?.id) {
+    if (!chrome.storage) chrome.storage = storage;
+    if (!chrome.tabs) chrome.tabs = { create: ({ url }) => window.open(url, '_blank') };
+    window.__LEETLENS_WEB__ = true;
+    return;
+  }
+
   const messageListeners = [];
 
   const runtime = {
@@ -69,35 +106,6 @@
       return Promise.resolve(response);
     },
     lastError: null
-  };
-
-  const storage = {
-    local: {
-      get(keys, cb) {
-        const out = {};
-        const list = Array.isArray(keys) ? keys : keys ? [keys] : Object.keys(localStorage);
-        list.forEach(k => {
-          const v = localStorage.getItem(k);
-          if (v != null) {
-            try { out[k] = JSON.parse(v); } catch (_) { out[k] = v; }
-          }
-        });
-        if (typeof cb === 'function') cb(out);
-        return Promise.resolve(out);
-      },
-      set(obj, cb) {
-        Object.entries(obj).forEach(([k, v]) => {
-          localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
-        });
-        if (typeof cb === 'function') cb();
-        return Promise.resolve();
-      },
-      remove(keys, cb) {
-        (Array.isArray(keys) ? keys : [keys]).forEach(k => localStorage.removeItem(k));
-        if (typeof cb === 'function') cb();
-        return Promise.resolve();
-      }
-    }
   };
 
   const identity = {
