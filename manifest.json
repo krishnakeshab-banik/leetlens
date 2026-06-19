@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "LeetCode Time Tracker",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Track time spent on each LeetCode problem with star ratings",
   "permissions": [
     "storage",
     "tabs",
     "alarms",
-    "identity"
+    "identity",
+    "offscreen"
   ],
   "host_permissions": [
     "https://leetcode.com/*",
@@ -62,6 +63,8 @@
     },
     {
       "resources": [
+        "offscreen.html",
+        "offscreen.js",
         "revision.html",
         "revision.js",
         "tailwind.css",
@@ -94,8 +97,12 @@
   "externally_connectable": {
     "matches": [
       "https://*.vercel.app/*",
+      "https://leetlens.srminsider.in/*",
+      "https://*.srminsider.in/*",
       "http://localhost/*",
-      "https://localhost/*"
+      "https://localhost/*",
+      "http://127.0.0.1/*",
+      "https://127.0.0.1/*"
     ]
   }
 }

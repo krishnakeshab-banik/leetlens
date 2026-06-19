@@ -9,6 +9,58 @@ try {
 let activeSession = null; // { slug, title, difficulty, startTime, tabId, paused, pausedAt, activityId }
 let trackedTabs = {}; // tabId -> { urls[], startedAt }
 
+const OFFSCREEN_PATH = 'offscreen.html';
+const DEFAULT_AUTH_BRIDGE_URL = 'https://leetlens.srminsider.in/auth-google.html';
+let creatingOffscreenDocument = null;
+
+async function hasOffscreenDocument() {
+  if (!chrome.offscreen) return false;
+  const matchedClients = await self.clients.matchAll();
+  const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_PATH);
+  return matchedClients.some(client => client.url === offscreenUrl);
+}
+
+async function ensureOffscreenDocument() {
+  if (!chrome.offscreen) {
+    throw new Error('Offscreen documents are not available in this browser.');
+  }
+  if (await hasOffscreenDocument()) return;
+  if (creatingOffscreenDocument) {
+    await creatingOffscreenDocument;
+    return;
+  }
+  creatingOffscreenDocument = chrome.offscreen.createDocument({
+    url: OFFSCREEN_PATH,
+    reasons: ['IFRAME_SCRIPTING'],
+    justification: 'Firebase Google sign-in for the extension dashboard'
+  });
+  await creatingOffscreenDocument;
+  creatingOffscreenDocument = null;
+}
+
+async function closeOffscreenDocument() {
+  if (!chrome.offscreen) return;
+  if (!(await hasOffscreenDocument())) return;
+  await chrome.offscreen.closeDocument();
+}
+
+async function runOffscreenGoogleSignIn(bridgeUrl) {
+  await ensureOffscreenDocument();
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({
+      target: 'offscreen',
+      type: 'START_GOOGLE_AUTH',
+      bridgeUrl: bridgeUrl || DEFAULT_AUTH_BRIDGE_URL
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
 // ── helpers ────────────────────────────────────────────────────────────────
 function now() { return Date.now(); }
 
@@ -372,6 +424,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           inUse: Boolean(activeSession?.slug),
           currentProblem: activeSession?.title || activeSession?.slug || null
         });
+        break;
+      }
+      case 'EXTENSION_GOOGLE_SIGN_IN': {
+        try {
+          const result = await runOffscreenGoogleSignIn(msg.bridgeUrl);
+          sendResponse(result);
+        } catch (err) {
+          sendResponse({ ok: false, message: err.message || String(err) });
+        } finally {
+          await closeOffscreenDocument();
+        }
         break;
       }
     }

@@ -3,6 +3,7 @@ import {
   createUserWithEmailAndPassword,
   getRedirectResult,
   onAuthStateChanged,
+  signInWithCredential,
   signInWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
@@ -17,7 +18,14 @@ import { getFirebaseAuth, getDb } from './firebase-init.js';
 
 const AUTH_STORAGE_KEY = 'leetlensAuth';
 const PENDING_REDIRECT_KEY = 'leetlensPendingAuthRedirect';
+const AUTH_BRIDGE_URL = typeof __AUTH_BRIDGE_URL__ !== 'undefined'
+  ? __AUTH_BRIDGE_URL__
+  : 'https://leetlens.srminsider.in/auth-google.html';
 let redirectResultHandled = false;
+
+function isChromeExtensionPage() {
+  return typeof chrome !== 'undefined' && Boolean(chrome.runtime?.id) && !window.__LEETLENS_WEB__;
+}
 
 export function isPendingAuthRedirect() {
   try {
@@ -158,9 +166,45 @@ async function signInWithGoogleRedirect(auth, provider) {
   return null;
 }
 
+async function signInWithGoogleViaOffscreen() {
+  const response = await new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({
+      type: 'EXTENSION_GOOGLE_SIGN_IN',
+      bridgeUrl: AUTH_BRIDGE_URL
+    }, (res) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(res);
+    });
+  });
+
+  if (!response?.ok) {
+    throw new Error(formatAuthError({
+      code: response?.code,
+      message: response?.message || 'Google sign-in failed in the extension.'
+    }));
+  }
+  if (!response.idToken) {
+    throw new Error('Google sign-in did not return a token.');
+  }
+
+  const auth = getFirebaseAuth();
+  await ensureAuthPersistence(auth);
+  const credential = GoogleAuthProvider.credential(response.idToken, response.accessToken || null);
+  const result = await signInWithCredential(auth, credential);
+  return result.user;
+}
+
 async function signInWithGoogleFirebase() {
   const auth = getFirebaseAuth();
   await ensureAuthPersistence(auth);
+
+  if (isChromeExtensionPage()) {
+    return signInWithGoogleViaOffscreen();
+  }
+
   const provider = createGoogleProvider();
 
   if (shouldPreferRedirect()) {

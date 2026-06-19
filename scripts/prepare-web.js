@@ -5,7 +5,7 @@ const root = path.join(__dirname, '..');
 const webDir = path.join(root, 'web');
 
 const COPY_DIRS = ['lib', 'assets', 'data', 'icons'];
-const COPY_FILES = ['dashboard.html', 'dashboard.js', 'tailwind.css', 'input.css'];
+const COPY_FILES = ['dashboard.html', 'dashboard.js', 'tailwind.css', 'input.css', 'auth-google.html'];
 const REQUIRED_LIB_FILES = [
   'dashboard-bundle.js',
   'dashboard-cloud-ui.js',
@@ -61,6 +61,11 @@ function main() {
     if (file === 'dashboard.html') content = patchDashboardHtml(content);
     fs.writeFileSync(path.join(webDir, file), content);
   });
+
+  const authBridgeSrc = path.join(root, 'lib', 'auth-google.js');
+  if (fs.existsSync(authBridgeSrc)) {
+    fs.copyFileSync(authBridgeSrc, path.join(webDir, 'auth-google.js'));
+  }
 
   const indexHtml = `<!DOCTYPE html>
 <html lang="en">

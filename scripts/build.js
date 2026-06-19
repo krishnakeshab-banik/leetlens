@@ -43,6 +43,9 @@ const firebaseConfig = {
 };
 
 define['__FIREBASE_CONFIG__'] = JSON.stringify(firebaseConfig);
+define['__AUTH_BRIDGE_URL__'] = JSON.stringify(
+  env.VITE_AUTH_BRIDGE_URL || 'https://leetlens.srminsider.in/auth-google.html'
+);
 
 if (!fs.existsSync(libDir)) fs.mkdirSync(libDir, { recursive: true });
 
@@ -54,6 +57,10 @@ const builds = [
   {
     entry: 'src/background-bundle.js',
     outfile: 'lib/background-bundle.js'
+  },
+  {
+    entry: 'src/auth-google-bridge.js',
+    outfile: 'lib/auth-google.js'
   }
 ];
 

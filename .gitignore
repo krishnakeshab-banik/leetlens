@@ -7,5 +7,7 @@ web/lib/background-bundle.js
 .firebase/
 functions/lib/
 *.log
+dist/
 
 leetlens-mirror/
+extension/
