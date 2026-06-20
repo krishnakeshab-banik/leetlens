@@ -67,6 +67,14 @@ function main() {
     fs.copyFileSync(authBridgeSrc, path.join(webDir, 'auth-google.js'));
   }
 
+  const webDashboardBundle = path.join(root, 'lib', 'dashboard-bundle-web.js');
+  const webLibBundle = path.join(webDir, 'lib', 'dashboard-bundle.js');
+  if (fs.existsSync(webDashboardBundle)) {
+    fs.copyFileSync(webDashboardBundle, webLibBundle);
+  }
+  const strayWebBundle = path.join(webDir, 'lib', 'dashboard-bundle-web.js');
+  if (fs.existsSync(strayWebBundle)) fs.unlinkSync(strayWebBundle);
+
   const indexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>

@@ -18,9 +18,7 @@ const COPY_FILES = [
   'dashboard.js',
   'revision.html',
   'revision.js',
-  'tailwind.css',
-  'offscreen.html',
-  'offscreen.js'
+  'tailwind.css'
 ];
 
 const COPY_DIRS = ['icons', 'lib', 'data', 'assets'];
@@ -60,6 +58,36 @@ function zipFolder(sourceDir, destinationZip) {
   execSync(`cd "${parent}" && zip -r "${destinationZip}" "${folderName}"`, { stdio: 'inherit' });
 }
 
+function loadEnv() {
+  const envPath = path.join(root, '.env');
+  const env = {};
+  if (!fs.existsSync(envPath)) return env;
+  fs.readFileSync(envPath, 'utf8').split('\n').forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+    const idx = trimmed.indexOf('=');
+    if (idx === -1) return;
+    env[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
+  });
+  return env;
+}
+
+function patchManifestOAuth(outDir) {
+  const env = loadEnv();
+  const clientId = env.VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID || '';
+  const manifestPath = path.join(outDir, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  if (clientId) {
+    manifest.oauth2 = {
+      client_id: clientId,
+      scopes: ['openid', 'email', 'profile']
+    };
+  } else if (manifest.oauth2) {
+    delete manifest.oauth2;
+  }
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+}
+
 function main() {
   console.log('Building extension bundles...');
   execSync('node scripts/build.js', { cwd: root, stdio: 'inherit' });
@@ -91,6 +119,12 @@ function main() {
     }
     copyRecursive(src, path.join(outDir, dir));
   });
+
+  patchManifestOAuth(outDir);
+  const clientId = loadEnv().VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID;
+  if (!clientId) {
+    console.warn('VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID not set — extension Google sign-in will fail until configured');
+  }
 
   fs.mkdirSync(path.dirname(zipPath), { recursive: true });
   zipFolder(outDir, zipPath);

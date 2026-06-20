@@ -1,14 +1,13 @@
 {
   "manifest_version": 3,
   "name": "LeetCode Time Tracker",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Track time spent on each LeetCode problem with star ratings",
   "permissions": [
     "storage",
     "tabs",
     "alarms",
-    "identity",
-    "offscreen"
+    "identity"
   ],
   "host_permissions": [
     "https://leetcode.com/*",
@@ -63,8 +62,6 @@
     },
     {
       "resources": [
-        "offscreen.html",
-        "offscreen.js",
         "revision.html",
         "revision.js",
         "tailwind.css",

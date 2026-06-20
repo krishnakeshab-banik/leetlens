@@ -1,11 +1,10 @@
 import {
   createUserWithEmailAndPassword,
-  getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
   setPersistence,
-  browserLocalPersistence,
+  indexedDBLocalPersistence,
   inMemoryPersistence,
   updateProfile
 } from 'firebase/auth';
@@ -14,45 +13,13 @@ import { getFirebaseAuth, getDb } from './firebase-init.js';
 import { signInWithGooglePlatform } from './auth-google-platform.js';
 
 const AUTH_STORAGE_KEY = 'leetlensAuth';
-const PENDING_REDIRECT_KEY = 'leetlensPendingAuthRedirect';
-const IS_EXTENSION_BUILD = typeof __EXTENSION_BUILD__ !== 'undefined' && __EXTENSION_BUILD__;
-let redirectResultHandled = false;
-
-function isChromeExtensionPage() {
-  if (typeof window === 'undefined') return false;
-  if (window.__LEETLENS_WEB__) return false;
-  return window.location.protocol === 'chrome-extension:'
-    || (typeof chrome !== 'undefined' && Boolean(chrome.runtime?.id));
-}
 
 export function isPendingAuthRedirect() {
-  try {
-    return sessionStorage.getItem(PENDING_REDIRECT_KEY) === '1';
-  } catch (_) {
-    return false;
-  }
+  return false;
 }
 
 export function isAuthCallbackUrl() {
-  if (typeof window === 'undefined') return false;
-  const { search, hash } = window.location;
-  return /[?&]apiKey=/.test(search)
-    || /[?&]authType=/.test(search)
-    || /[?&]code=/.test(search)
-    || /[?&]state=/.test(search)
-    || /(?:^|[?#&])apiKey=/.test(hash);
-}
-
-function markPendingRedirect() {
-  try {
-    sessionStorage.setItem(PENDING_REDIRECT_KEY, '1');
-  } catch (_) {}
-}
-
-function clearPendingRedirect() {
-  try {
-    sessionStorage.removeItem(PENDING_REDIRECT_KEY);
-  } catch (_) {}
+  return false;
 }
 
 export function formatAuthError(err) {
@@ -63,7 +30,6 @@ export function formatAuthError(err) {
     'auth/internal-error': 'Firebase authentication failed. Enable Google sign-in in Firebase Console and add this app domain under Authorized domains.',
     'auth/invalid-credential': 'Google sign-in failed. Ensure Google is enabled in Firebase Console → Authentication → Sign-in method, and that this domain is authorized.',
     'auth/operation-not-allowed': 'Google sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in method → Google.',
-    'auth/popup-blocked': 'Sign-in popup was blocked. Allow popups for this site or try again — we will use redirect sign-in automatically when blocked.',
     'auth/popup-closed-by-user': 'Sign-in cancelled.',
     'auth/network-request-failed': 'Network error. Check your connection and try again.',
     'auth/unauthorized-domain': 'This domain is not authorized for Firebase Auth. Add it in Firebase Console → Authentication → Settings → Authorized domains.',
@@ -90,7 +56,7 @@ export function formatAuthError(err) {
 
 async function ensureAuthPersistence(auth) {
   try {
-    await setPersistence(auth, browserLocalPersistence);
+    await setPersistence(auth, indexedDBLocalPersistence);
   } catch (_) {
     try {
       await setPersistence(auth, inMemoryPersistence);
@@ -98,70 +64,8 @@ async function ensureAuthPersistence(auth) {
   }
 }
 
-function cleanAuthParamsFromUrl() {
-  if (typeof window === 'undefined') return;
-  try {
-    const url = new URL(window.location.href);
-    const authParams = ['apiKey', 'authType', 'code', 'state', 'oobCode', 'mode', 'lang', 'tid', 'eid'];
-    let changed = false;
-    authParams.forEach(param => {
-      if (url.searchParams.has(param)) {
-        url.searchParams.delete(param);
-        changed = true;
-      }
-    });
-    if (!changed) return;
-    const search = url.searchParams.toString();
-    const next = `${url.pathname}${search ? `?${search}` : ''}${url.hash}`;
-    history.replaceState(null, '', next);
-  } catch (_) {}
-}
-
-/** Web-only: complete signInWithRedirect flows. Extension builds skip this entirely. */
 export async function handleGoogleRedirectResult() {
-  if (IS_EXTENSION_BUILD || isChromeExtensionPage()) return null;
-  if (redirectResultHandled) return null;
-  redirectResultHandled = true;
-
-  const hadCallback = isAuthCallbackUrl() || isPendingAuthRedirect();
-  if (!hadCallback) return null;
-
-  const auth = getFirebaseAuth();
-  await ensureAuthPersistence(auth);
-  try {
-    await auth.authStateReady();
-    const result = await getRedirectResult(auth);
-    if (result?.user) {
-      clearPendingRedirect();
-      cleanAuthParamsFromUrl();
-      return completeSignIn(result.user);
-    }
-    if (auth.currentUser) {
-      clearPendingRedirect();
-      cleanAuthParamsFromUrl();
-      return completeSignIn(auth.currentUser);
-    }
-    clearPendingRedirect();
-    cleanAuthParamsFromUrl();
-    throw new Error('Google sign-in could not be completed after redirect. Please try again.');
-  } catch (err) {
-    clearPendingRedirect();
-    cleanAuthParamsFromUrl();
-    throw new Error(formatAuthError(err));
-  }
-}
-
-async function signInWithGoogleFirebase() {
-  const auth = getFirebaseAuth();
-  await ensureAuthPersistence(auth);
-
-  if (IS_EXTENSION_BUILD || isChromeExtensionPage()) {
-    return signInWithGooglePlatform();
-  }
-
-  const user = await signInWithGooglePlatform();
-  if (!user) return null;
-  return user;
+  return null;
 }
 
 async function upsertUserDoc(user) {
@@ -197,7 +101,9 @@ async function completeSignIn(user) {
 
 export async function signInWithGoogle() {
   try {
-    const user = await signInWithGoogleFirebase();
+    const auth = getFirebaseAuth();
+    await ensureAuthPersistence(auth);
+    const user = await signInWithGooglePlatform();
     if (!user) return null;
     return await completeSignIn(user);
   } catch (err) {
