@@ -1,14 +1,25 @@
-import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import {
+  GoogleAuthProvider,
+  signInWithCredential
+} from 'firebase/auth';
 import { getFirebaseAuth } from './firebase-init.js';
+import { ensureAuthPersistence } from './auth-shared.js';
 
-const GOOGLE_WEB_CLIENT_ID = typeof __FIREBASE_GOOGLE_WEB_CLIENT_ID__ !== 'undefined'
-  ? __FIREBASE_GOOGLE_WEB_CLIENT_ID__
-  : '';
+function getGoogleWebClientId() {
+  if (typeof __FIREBASE_GOOGLE_WEB_CLIENT_ID__ !== 'undefined' && __FIREBASE_GOOGLE_WEB_CLIENT_ID__) {
+    return __FIREBASE_GOOGLE_WEB_CLIENT_ID__;
+  }
+  return '';
+}
 
-function parseOAuthResponse(responseUrl) {
-  const fragment = responseUrl.includes('#') ? responseUrl.split('#')[1] : '';
-  const query = responseUrl.includes('?') ? responseUrl.split('?').slice(1).join('?') : '';
-  const params = new URLSearchParams(fragment || query);
+function getExtensionRedirectUri() {
+  return `https://${chrome.runtime.id}.chromiumapp.org/`;
+}
+
+function parseOAuthRedirect(url) {
+  const hash = url.includes('#') ? url.split('#')[1] : '';
+  const query = url.includes('?') ? url.split('?').slice(1).join('?').split('#')[0] : '';
+  const params = new URLSearchParams(hash || query);
   return {
     idToken: params.get('id_token'),
     accessToken: params.get('access_token'),
@@ -17,58 +28,61 @@ function parseOAuthResponse(responseUrl) {
   };
 }
 
-function buildGoogleAuthUrl(redirectUri, nonce) {
-  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-  url.searchParams.set('client_id', GOOGLE_WEB_CLIENT_ID);
-  url.searchParams.set('redirect_uri', redirectUri);
-  url.searchParams.set('response_type', 'id_token token');
-  url.searchParams.set('scope', 'openid email profile');
-  url.searchParams.set('nonce', nonce);
-  url.searchParams.set('prompt', 'select_account');
-  return url.toString();
-}
-
-/** MV3-safe Google sign-in — no remote scripts, uses chrome.identity only. */
-export async function signInWithGooglePlatform() {
-  if (!GOOGLE_WEB_CLIENT_ID) {
-    throw new Error(
-      'Google Web Client ID is missing. Copy it from Firebase Console → Authentication → Google → Web client ID, set VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID in .env, then run npm run build.'
-    );
-  }
-  if (!chrome?.identity?.launchWebAuthFlow) {
-    throw new Error('chrome.identity.launchWebAuthFlow is not available in this context.');
-  }
-
-  const redirectUri = chrome.identity.getRedirectURL();
-  const nonce = crypto.randomUUID();
-  const authUrl = buildGoogleAuthUrl(redirectUri, nonce);
-
-  const responseUrl = await new Promise((resolve, reject) => {
-    chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true }, (redirectResponse) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
+function launchGoogleOAuthFlow(authUrl) {
+  return new Promise((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true }, (redirectUrl) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        if (/canceled|closed|user/i.test(err.message)) {
+          reject(Object.assign(new Error('Sign-in cancelled.'), { code: 'auth/popup-closed-by-user' }));
+          return;
+        }
+        reject(new Error(err.message));
         return;
       }
-      if (!redirectResponse) {
-        reject(new Error('Sign-in cancelled.'));
+      if (!redirectUrl) {
+        reject(Object.assign(new Error('Sign-in cancelled.'), { code: 'auth/popup-closed-by-user' }));
         return;
       }
-      resolve(redirectResponse);
+      resolve(redirectUrl);
     });
   });
+}
 
-  const { idToken, accessToken, error, errorDescription } = parseOAuthResponse(responseUrl);
+/** MV3-safe Google sign-in: chrome.identity + Firebase signInWithCredential (no remote scripts). */
+export async function signInWithGoogleExtension() {
+  const clientId = getGoogleWebClientId();
+  if (!clientId) {
+    throw new Error(
+      'Firebase Google Web Client ID missing. In Firebase Console → Authentication → Sign-in method → Google, copy the Web client ID into .env as VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID, then run npm run build.'
+    );
+  }
+
+  const redirectUri = getExtensionRedirectUri();
+  const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  authUrl.searchParams.set('client_id', clientId);
+  authUrl.searchParams.set('response_type', 'id_token token');
+  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('scope', 'openid email profile');
+  authUrl.searchParams.set('prompt', 'select_account');
+
+  const responseUrl = await launchGoogleOAuthFlow(authUrl.toString());
+  const { idToken, accessToken, error, errorDescription } = parseOAuthRedirect(responseUrl);
+
   if (error) {
     throw new Error(errorDescription || error);
   }
   if (!idToken) {
-    throw new Error(
-      'No Google ID token received. In Google Cloud Console, add this redirect URI for your Firebase Web OAuth client: ' + redirectUri
-    );
+    throw new Error('No ID token received from Google. Ensure the OAuth redirect URI is authorized for this extension.');
   }
 
   const auth = getFirebaseAuth();
+  await ensureAuthPersistence(auth);
   const credential = GoogleAuthProvider.credential(idToken, accessToken || null);
   const result = await signInWithCredential(auth, credential);
   return result.user;
+}
+
+export function getExtensionOAuthRedirectUri() {
+  return getExtensionRedirectUri();
 }

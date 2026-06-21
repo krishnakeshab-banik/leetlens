@@ -34,7 +34,6 @@ export async function signInWithGooglePlatform() {
   const provider = createGoogleProvider();
 
   if (shouldPreferRedirect()) {
-    try { sessionStorage.setItem('leetlensPendingAuthRedirect', '1'); } catch (_) {}
     await signInWithRedirect(auth, provider);
     return null;
   }
@@ -47,7 +46,6 @@ export async function signInWithGooglePlatform() {
       || err?.code === 'auth/cancelled-popup-request'
       || err?.code === 'auth/operation-not-supported-in-this-environment';
     if (useRedirect || isMobileBrowser()) {
-      try { sessionStorage.setItem('leetlensPendingAuthRedirect', '1'); } catch (_) {}
       await signInWithRedirect(auth, provider);
       return null;
     }

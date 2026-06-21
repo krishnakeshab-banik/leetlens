@@ -6,11 +6,6 @@ const root = path.join(__dirname, '..');
 const envPath = path.join(root, '.env');
 const libDir = path.join(root, 'lib');
 
-const firebaseAuthWebExtension = path.join(
-  root,
-  'node_modules/firebase/auth/web-extension/dist/esm/index.esm.js'
-);
-
 function loadEnv() {
   const env = {};
   if (fs.existsSync(envPath)) {
@@ -30,7 +25,34 @@ function loadEnv() {
   return env;
 }
 
+function aliasPlugin(targetFile, stubFile) {
+  return {
+    name: `alias-${targetFile}`,
+    setup(build) {
+      build.onResolve({ filter: new RegExp(`/${targetFile.replace('.', '\\.')}$`) }, () => ({
+        path: path.join(root, 'src/stubs', stubFile)
+      }));
+    }
+  };
+}
+
+function replaceModulePlugin(moduleName, replacementPath) {
+  return {
+    name: `replace-${moduleName}`,
+    setup(build) {
+      build.onResolve({ filter: new RegExp(`/${moduleName.replace('.', '\\.')}$`) }, () => ({
+        path: path.join(root, replacementPath)
+      }));
+    }
+  };
+}
+
 const env = loadEnv();
+const define = {};
+Object.entries(env).forEach(([key, value]) => {
+  define[`process.env.${key}`] = JSON.stringify(value);
+});
+
 const firebaseConfig = {
   apiKey: env.VITE_FIREBASE_API_KEY || '',
   authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || '',
@@ -41,109 +63,57 @@ const firebaseConfig = {
   measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || ''
 };
 
-function makeDefine(extra = {}) {
-  const define = {
-    __FIREBASE_CONFIG__: JSON.stringify(firebaseConfig),
-    __AUTH_BRIDGE_URL__: JSON.stringify(
-      env.VITE_AUTH_BRIDGE_URL || 'https://leetlens.srminsider.in/auth-google.html'
-    ),
-    __FIREBASE_GOOGLE_WEB_CLIENT_ID__: JSON.stringify(
-      env.VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID || ''
-    ),
-    ...extra
-  };
-  Object.entries(env).forEach(([key, value]) => {
-    define[`process.env.${key}`] = JSON.stringify(value);
-  });
-  return define;
-}
+define['__FIREBASE_CONFIG__'] = JSON.stringify(firebaseConfig);
+define['__FIREBASE_GOOGLE_WEB_CLIENT_ID__'] = JSON.stringify(
+  env.VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID || ''
+);
 
-function makePlatformPlugin(extensionBuild) {
-  const platformModule = extensionBuild
-    ? path.join(root, 'src/auth-google-extension.js')
-    : path.join(root, 'src/auth-google-web.js');
-  const firebaseInitModule = extensionBuild
-    ? path.join(root, 'src/firebase-init-extension.js')
-    : path.join(root, 'src/firebase-init.js');
-  const authServiceModule = extensionBuild
-    ? path.join(root, 'src/auth-service-extension.js')
-    : path.join(root, 'src/auth-service.js');
+if (!fs.existsSync(libDir)) fs.mkdirSync(libDir, { recursive: true });
 
-  return {
-    name: 'leetlens-platform-modules',
-    setup(build) {
-      build.onResolve({ filter: /auth-google-platform\.js$/ }, () => ({ path: platformModule }));
-      build.onResolve({ filter: /[/\\]firebase-init\.js$/ }, () => ({ path: firebaseInitModule }));
-      build.onResolve({ filter: /[/\\]auth-service\.js$/ }, () => ({ path: authServiceModule }));
-    }
-  };
-}
-
-async function buildBundle({ entry, outfile, extensionBuild }) {
-  const alias = extensionBuild ? { 'firebase/auth': firebaseAuthWebExtension } : {};
-
-  await esbuild.build({
-    entryPoints: [path.join(root, entry)],
-    bundle: true,
-    outfile: path.join(root, outfile),
-    format: 'iife',
-    platform: 'browser',
-    target: ['chrome109'],
-    alias,
-    plugins: [makePlatformPlugin(extensionBuild)],
-    define: makeDefine({ __EXTENSION_BUILD__: extensionBuild ? 'true' : 'false' }),
-    minify: false,
-    sourcemap: false
-  });
-  console.log(`Built ${outfile}`);
-}
+const sharedBuildOptions = {
+  format: 'iife',
+  platform: 'browser',
+  target: ['chrome109'],
+  define,
+  minify: false,
+  sourcemap: false
+};
 
 async function run() {
-  if (!fs.existsSync(libDir)) fs.mkdirSync(libDir, { recursive: true });
-
-  await buildBundle({
-    entry: 'src/dashboard-bundle.js',
-    outfile: 'lib/dashboard-bundle.js',
-    extensionBuild: true
+  await esbuild.build({
+    ...sharedBuildOptions,
+    entryPoints: [path.join(root, 'src/dashboard-bundle.js')],
+    bundle: true,
+    outfile: path.join(root, 'lib/dashboard-bundle.js'),
+    plugins: [
+      aliasPlugin('auth-google-web.js', 'auth-google-web-stub.js'),
+      replaceModulePlugin('firebase-init.js', 'src/firebase-init-extension.js')
+    ]
   });
-
-  await buildBundle({
-    entry: 'src/dashboard-bundle.js',
-    outfile: 'lib/dashboard-bundle-web.js',
-    extensionBuild: false
-  });
+  console.log('Built lib/dashboard-bundle.js (extension — no apis.google.com)');
 
   await esbuild.build({
+    ...sharedBuildOptions,
+    entryPoints: [path.join(root, 'src/dashboard-bundle.js')],
+    bundle: true,
+    outfile: path.join(root, 'lib/dashboard-bundle-web.js'),
+    plugins: [aliasPlugin('auth-google-extension.js', 'auth-google-extension-stub.js')]
+  });
+  console.log('Built lib/dashboard-bundle-web.js (web dashboard)');
+
+  await esbuild.build({
+    ...sharedBuildOptions,
     entryPoints: [path.join(root, 'src/background-bundle.js')],
     bundle: true,
-    outfile: path.join(root, 'lib/background-bundle.js'),
-    format: 'iife',
-    platform: 'browser',
-    target: ['chrome109'],
-    define: makeDefine({ __EXTENSION_BUILD__: 'true' }),
-    minify: false,
-    sourcemap: false
+    outfile: path.join(root, 'lib/background-bundle.js')
   });
   console.log('Built lib/background-bundle.js');
-
-  await esbuild.build({
-    entryPoints: [path.join(root, 'src/auth-google-bridge.js')],
-    bundle: true,
-    outfile: path.join(root, 'lib/auth-google.js'),
-    format: 'iife',
-    platform: 'browser',
-    target: ['chrome109'],
-    define: makeDefine({ __EXTENSION_BUILD__: 'false' }),
-    minify: false,
-    sourcemap: false
-  });
-  console.log('Built lib/auth-google.js');
 
   if (!env.VITE_FIREBASE_API_KEY || !env.VITE_FIREBASE_PROJECT_ID) {
     console.warn('VITE_FIREBASE_* vars not set — cloud sign-in will not work until configured');
   }
   if (!env.VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID) {
-    console.warn('VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID not set — extension Google sign-in requires the Web client ID from Firebase Console');
+    console.warn('VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID not set — extension Google sign-in needs the Web client ID from Firebase Console → Authentication → Google');
   }
 }
 

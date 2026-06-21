@@ -54,6 +54,12 @@ function main() {
   }
 
   COPY_DIRS.forEach(dir => copyRecursive(path.join(root, dir), path.join(webDir, dir)));
+
+  const webBundleSrc = path.join(root, 'lib', 'dashboard-bundle-web.js');
+  if (fs.existsSync(webBundleSrc)) {
+    fs.copyFileSync(webBundleSrc, path.join(webDir, 'lib', 'dashboard-bundle.js'));
+  }
+
   COPY_FILES.forEach(file => {
     const src = path.join(root, file);
     if (!fs.existsSync(src)) return;
@@ -66,14 +72,6 @@ function main() {
   if (fs.existsSync(authBridgeSrc)) {
     fs.copyFileSync(authBridgeSrc, path.join(webDir, 'auth-google.js'));
   }
-
-  const webDashboardBundle = path.join(root, 'lib', 'dashboard-bundle-web.js');
-  const webLibBundle = path.join(webDir, 'lib', 'dashboard-bundle.js');
-  if (fs.existsSync(webDashboardBundle)) {
-    fs.copyFileSync(webDashboardBundle, webLibBundle);
-  }
-  const strayWebBundle = path.join(webDir, 'lib', 'dashboard-bundle-web.js');
-  if (fs.existsSync(strayWebBundle)) fs.unlinkSync(strayWebBundle);
 
   const indexHtml = `<!DOCTYPE html>
 <html lang="en">

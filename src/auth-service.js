@@ -4,26 +4,23 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
-  setPersistence,
-  browserLocalPersistence,
-  inMemoryPersistence,
   updateProfile
 } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { getFirebaseAuth, getDb } from './firebase-init.js';
-import { signInWithGooglePlatform } from './auth-google-platform.js';
+import { signInWithGoogleExtension } from './auth-google-extension.js';
+import { signInWithGooglePlatform } from './auth-google-web.js';
+import {
+  AUTH_STORAGE_KEY,
+  PENDING_REDIRECT_KEY,
+  ensureAuthPersistence,
+  formatAuthError,
+  isChromeExtensionPage
+} from './auth-shared.js';
 
-const AUTH_STORAGE_KEY = 'leetlensAuth';
-const PENDING_REDIRECT_KEY = 'leetlensPendingAuthRedirect';
-const IS_EXTENSION_BUILD = typeof __EXTENSION_BUILD__ !== 'undefined' && __EXTENSION_BUILD__;
 let redirectResultHandled = false;
 
-function isChromeExtensionPage() {
-  if (typeof window === 'undefined') return false;
-  if (window.__LEETLENS_WEB__) return false;
-  return window.location.protocol === 'chrome-extension:'
-    || (typeof chrome !== 'undefined' && Boolean(chrome.runtime?.id));
-}
+export { formatAuthError, isChromeExtensionPage };
 
 export function isPendingAuthRedirect() {
   try {
@@ -55,49 +52,6 @@ function clearPendingRedirect() {
   } catch (_) {}
 }
 
-export function formatAuthError(err) {
-  const code = err?.code || '';
-  const msg = err?.message || String(err);
-
-  const map = {
-    'auth/internal-error': 'Firebase authentication failed. Enable Google sign-in in Firebase Console and add this app domain under Authorized domains.',
-    'auth/invalid-credential': 'Google sign-in failed. Ensure Google is enabled in Firebase Console → Authentication → Sign-in method, and that this domain is authorized.',
-    'auth/operation-not-allowed': 'Google sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in method → Google.',
-    'auth/popup-blocked': 'Sign-in popup was blocked. Allow popups for this site or try again — we will use redirect sign-in automatically when blocked.',
-    'auth/popup-closed-by-user': 'Sign-in cancelled.',
-    'auth/network-request-failed': 'Network error. Check your connection and try again.',
-    'auth/unauthorized-domain': 'This domain is not authorized for Firebase Auth. Add it in Firebase Console → Authentication → Settings → Authorized domains.',
-    'auth/user-not-found': 'No account found with this email. Try signing up instead.',
-    'auth/wrong-password': 'Incorrect password. Please try again.',
-    'auth/email-already-in-use': 'An account with this email already exists. Try signing in.',
-    'auth/weak-password': 'Password is too weak. Use at least 6 characters.',
-    'auth/invalid-email': 'Please enter a valid email address.',
-    'auth/too-many-requests': 'Too many attempts. Wait a moment and try again.',
-    'auth/missing-or-invalid-nonce': 'Sign-in session expired. Please try again.',
-    'auth/web-storage-unsupported': 'This browser blocks sign-in storage. Disable private browsing or try a different browser.'
-  };
-
-  if (map[code]) return map[code];
-  if (msg.includes('INVALID_IDP_RESPONSE') || msg.includes('audience')) {
-    return 'Google sign-in client ID must match Firebase Console → Authentication → Google → Web client ID. Set VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID in .env and rebuild.';
-  }
-  if (msg.includes('redirect_uri_mismatch')) {
-    const redirectUri = chrome?.identity?.getRedirectURL?.() || 'https://YOUR_EXTENSION_ID.chromiumapp.org/';
-    return `OAuth redirect mismatch. Add this URI to your Firebase Google Web OAuth client: ${redirectUri}`;
-  }
-  return msg.replace(/^Firebase:\s*/i, '').replace(/^Error\s*\([^)]+\)\.\s*/i, '');
-}
-
-async function ensureAuthPersistence(auth) {
-  try {
-    await setPersistence(auth, browserLocalPersistence);
-  } catch (_) {
-    try {
-      await setPersistence(auth, inMemoryPersistence);
-    } catch (_) {}
-  }
-}
-
 function cleanAuthParamsFromUrl() {
   if (typeof window === 'undefined') return;
   try {
@@ -117,9 +71,9 @@ function cleanAuthParamsFromUrl() {
   } catch (_) {}
 }
 
-/** Web-only: complete signInWithRedirect flows. Extension builds skip this entirely. */
+/** Web only — completes signInWithRedirect flows. No-op in extension pages. */
 export async function handleGoogleRedirectResult() {
-  if (IS_EXTENSION_BUILD || isChromeExtensionPage()) return null;
+  if (isChromeExtensionPage()) return null;
   if (redirectResultHandled) return null;
   redirectResultHandled = true;
 
@@ -152,15 +106,15 @@ export async function handleGoogleRedirectResult() {
 }
 
 async function signInWithGoogleFirebase() {
-  const auth = getFirebaseAuth();
-  await ensureAuthPersistence(auth);
+  if (isChromeExtensionPage()) {
+    return signInWithGoogleExtension();
+  }
 
-  if (IS_EXTENSION_BUILD || isChromeExtensionPage()) {
-    return signInWithGooglePlatform();
+  if (isAuthCallbackUrl() || isPendingAuthRedirect()) {
+    markPendingRedirect();
   }
 
   const user = await signInWithGooglePlatform();
-  if (!user) return null;
   return user;
 }
 

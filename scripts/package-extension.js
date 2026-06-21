@@ -21,7 +21,22 @@ const COPY_FILES = [
   'tailwind.css'
 ];
 
-const COPY_DIRS = ['icons', 'lib', 'data', 'assets'];
+const COPY_DIRS = ['icons', 'data', 'assets'];
+
+const COPY_LIB_FILES = [
+  'lib/background-bundle.js',
+  'lib/dashboard-bundle.js',
+  'lib/dashboard-cloud-ui.js',
+  'lib/dashboard-heatmap.js',
+  'lib/dashboard-striver.js',
+  'lib/dashboard-plan.js',
+  'lib/dashboard-analytics.js',
+  'lib/dashboard-github.js',
+  'lib/dashboard-extension.js',
+  'lib/dashboard-developers.js',
+  'lib/dashboard-enhanced.css',
+  'lib/rating-modal.js'
+];
 
 const REQUIRED_BUILT = [
   'lib/dashboard-bundle.js',
@@ -58,36 +73,6 @@ function zipFolder(sourceDir, destinationZip) {
   execSync(`cd "${parent}" && zip -r "${destinationZip}" "${folderName}"`, { stdio: 'inherit' });
 }
 
-function loadEnv() {
-  const envPath = path.join(root, '.env');
-  const env = {};
-  if (!fs.existsSync(envPath)) return env;
-  fs.readFileSync(envPath, 'utf8').split('\n').forEach(line => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) return;
-    const idx = trimmed.indexOf('=');
-    if (idx === -1) return;
-    env[trimmed.slice(0, idx).trim()] = trimmed.slice(idx + 1).trim();
-  });
-  return env;
-}
-
-function patchManifestOAuth(outDir) {
-  const env = loadEnv();
-  const clientId = env.VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID || '';
-  const manifestPath = path.join(outDir, 'manifest.json');
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  if (clientId) {
-    manifest.oauth2 = {
-      client_id: clientId,
-      scopes: ['openid', 'email', 'profile']
-    };
-  } else if (manifest.oauth2) {
-    delete manifest.oauth2;
-  }
-  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-}
-
 function main() {
   console.log('Building extension bundles...');
   execSync('node scripts/build.js', { cwd: root, stdio: 'inherit' });
@@ -120,11 +105,16 @@ function main() {
     copyRecursive(src, path.join(outDir, dir));
   });
 
-  patchManifestOAuth(outDir);
-  const clientId = loadEnv().VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID;
-  if (!clientId) {
-    console.warn('VITE_FIREBASE_GOOGLE_WEB_CLIENT_ID not set — extension Google sign-in will fail until configured');
-  }
+  COPY_LIB_FILES.forEach(file => {
+    const src = path.join(root, file);
+    if (!fs.existsSync(src)) {
+      console.error(`Missing required file: ${file}`);
+      process.exit(1);
+    }
+    const dest = path.join(outDir, file);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
+  });
 
   fs.mkdirSync(path.dirname(zipPath), { recursive: true });
   zipFolder(outDir, zipPath);

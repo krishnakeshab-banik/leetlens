@@ -2,8 +2,9 @@ import { initializeApp } from 'firebase/app';
 import {
   getAuth,
   initializeAuth,
-  indexedDBLocalPersistence,
-  inMemoryPersistence
+  browserLocalPersistence,
+  browserSessionPersistence,
+  indexedDBLocalPersistence
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { firebaseConfig, isFirebaseConfigured } from './config.js';
@@ -12,13 +13,17 @@ let app = null;
 let auth = null;
 let db = null;
 
+/** Extension pages: no popupRedirectResolver (MV3 forbids loading apis.google.com). */
 function createAuth(instance) {
   try {
     return initializeAuth(instance, {
-      persistence: [indexedDBLocalPersistence, inMemoryPersistence]
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence]
     });
-  } catch (_) {
-    return getAuth(instance);
+  } catch (err) {
+    if (err?.code === 'auth/already-initialized') {
+      return getAuth(instance);
+    }
+    throw err;
   }
 }
 
