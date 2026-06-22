@@ -8,6 +8,5 @@ web/lib/background-bundle.js
 functions/lib/
 *.log
 dist/
-
 leetlens-mirror/
 extension/
