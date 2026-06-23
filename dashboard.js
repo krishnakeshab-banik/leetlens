@@ -19,6 +19,8 @@ function getStatusEmoji(solved) {
 let allRecords = {};
 let mergedRecords = {};
 let recordsLoaded = false;
+let mergeLoadId = 0;
+let mergeInFlight = false;
 let currentFilter = 'all';
 let searchQuery = '';
 let currentSortField = 'lastSeen';
@@ -364,67 +366,76 @@ function updateCharts() {
 
 // ── merge local + LeetCode cloud solved ─────────────────────────────────────
 async function loadMergedRecords() {
-  mergedRecords = {};
+  const loadId = ++mergeLoadId;
+  mergeInFlight = true;
+  try {
+    const next = {};
 
-  Object.entries(allRecords).forEach(([slug, rec]) => {
-    mergeProblemRecord(mergedRecords, slug, {
-      ...rec,
-      source: 'tracked',
-      solved: !!rec.solved
-    });
-  });
-
-  const cloud = window.LeetLensCloud;
-  const state = cloud?.getCloudState();
-
-  if (state?.user) {
-    try {
-      const data = await cloud.fetchAnalyticsData();
-      (data?.solved || []).forEach(p => {
-        const slug = String(p.problemId || '').toLowerCase();
-        if (!slug) return;
-        mergeProblemRecord(mergedRecords, slug, {
-          slug,
-          title: p.title || slug,
-          difficulty: p.difficulty || 'Unknown',
-          solved: true,
-          stars: p.userDifficultyRating || 0,
-          totalMs: (p.timeSpentMinutes || 0) * 60000,
-          source: 'leetcode',
-          solvedAt: p.solvedAt,
-          lastSeen: p.solvedAt || Date.now()
-        });
+    Object.entries(allRecords).forEach(([slug, rec]) => {
+      mergeProblemRecord(next, slug, {
+        ...rec,
+        source: 'tracked',
+        solved: !!rec.solved
       });
-    } catch (_) {}
+    });
 
-    if (state.profile?.leetcodeUsername) {
+    const cloud = window.LeetLensCloud;
+    const state = cloud?.getCloudState();
+
+    if (state?.user) {
       try {
-        const live = await cloud.fetchLiveLeetCodeProblems();
-        live.forEach(p => {
+        const data = await cloud.fetchAnalyticsData();
+        (data?.solved || []).forEach(p => {
           const slug = String(p.problemId || '').toLowerCase();
           if (!slug) return;
-          mergeProblemRecord(mergedRecords, slug, {
+          mergeProblemRecord(next, slug, {
             slug,
             title: p.title || slug,
             difficulty: p.difficulty || 'Unknown',
             solved: true,
-            stars: 0,
-            totalMs: 0,
+            stars: p.userDifficultyRating || 0,
+            totalMs: (p.timeSpentMinutes || 0) * 60000,
             source: 'leetcode',
             solvedAt: p.solvedAt,
             lastSeen: p.solvedAt || Date.now()
           });
         });
       } catch (_) {}
-    }
-  }
 
-  Object.values(mergedRecords).forEach(r => {
-    if (!r.source) r.source = r.totalMs ? 'tracked' : 'leetcode';
-    if (r.source === 'leetcode' || r.source === 'both') r.solved = true;
-  });
-  recordsLoaded = true;
-  return mergedRecords;
+      if (state.profile?.leetcodeUsername) {
+        try {
+          const live = await cloud.fetchLiveLeetCodeProblems();
+          live.forEach(p => {
+            const slug = String(p.problemId || '').toLowerCase();
+            if (!slug) return;
+            mergeProblemRecord(next, slug, {
+              slug,
+              title: p.title || slug,
+              difficulty: p.difficulty || 'Unknown',
+              solved: true,
+              stars: 0,
+              totalMs: 0,
+              source: 'leetcode',
+              solvedAt: p.solvedAt,
+              lastSeen: p.solvedAt || Date.now()
+            });
+          });
+        } catch (_) {}
+      }
+    }
+
+    if (loadId !== mergeLoadId) return mergedRecords;
+
+    Object.values(next).forEach(r => {
+      if (!r.source) r.source = r.totalMs ? 'tracked' : 'leetcode';
+      if (r.source === 'leetcode' || r.source === 'both') r.solved = true;
+    });
+    mergedRecords = next;
+    recordsLoaded = true;
+    return mergedRecords;
+  } finally {
+    if (loadId === mergeLoadId) mergeInFlight = false;
+  }
 }
 
 function getProblemsSource() {
@@ -449,8 +460,31 @@ function shouldShowRecord(record) {
   return true;
 }
 
+function syncProblemsFilterSelect() {
+  const sel = document.getElementById('problemsFilter');
+  if (sel && sel.value !== currentFilter) sel.value = currentFilter;
+}
+
 function renderProblems() {
   const contentDiv = document.getElementById('problemsContent');
+  if (!contentDiv) return;
+
+  syncProblemsFilterSelect();
+
+  const countEl = document.getElementById('problemsCount');
+  const showInitialLoading = mergeInFlight && !recordsLoaded;
+  if (showInitialLoading) {
+    if (countEl) countEl.textContent = '…';
+    contentDiv.innerHTML = `
+      <tr>
+        <td colspan="7" class="text-center py-12 text-on-surface-variant/40">
+          <span class="material-symbols-outlined text-3xl problems-loading-spin">progress_activity</span>
+          <p class="text-sm mt-3">Loading problems…</p>
+        </td>
+      </tr>
+    `;
+    return;
+  }
   
   // Filter by status/difficulty
   let problems = Object.values(getProblemsSource()).filter(shouldShowRecord);
@@ -494,7 +528,9 @@ function renderProblems() {
     return 0;
   });
 
-  document.getElementById('problemsCount').textContent = problems.length;
+  document.getElementById('problemsCount').textContent = mergeInFlight
+    ? `${problems.length} · syncing…`
+    : String(problems.length);
 
   if (problems.length === 0) {
     contentDiv.innerHTML = `
@@ -957,15 +993,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Mobile nav uses same handler (already covered by .nav-item[data-view])
 
-  // Filter buttons
-  document.querySelectorAll('.filter-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-      e.target.classList.add('active');
-      currentFilter = e.target.dataset.filter;
+  // Filter dropdown
+  const filterSelect = document.getElementById('problemsFilter');
+  if (filterSelect) {
+    filterSelect.value = currentFilter;
+    filterSelect.addEventListener('change', (e) => {
+      currentFilter = e.target.value;
       renderProblems();
     });
-  });
+  }
 
   // Search input listener
   const searchInput = document.getElementById('searchProblems');
@@ -1122,7 +1158,11 @@ document.addEventListener('DOMContentLoaded', () => {
       allRecords = msg.records;
       updateStats();
       updateCharts();
-      renderProblems();
+      if (currentView === 'problems') {
+        loadMergedRecords().then(() => renderProblems());
+      } else {
+        renderProblems();
+      }
       if (currentView === 'revise') {
         revScheduleMap = buildRevSchedule(allRecords);
         renderRevStats();

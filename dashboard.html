@@ -399,6 +399,61 @@
       color: #ffa116;
     }
 
+    /* Problems filter dropdown */
+    .problems-filter-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .problems-filter-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: rgba(139, 148, 158, 0.85);
+      white-space: nowrap;
+    }
+    .problems-filter-select {
+      appearance: none;
+      -webkit-appearance: none;
+      min-width: 168px;
+      max-width: 100%;
+      padding: 8px 36px 8px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(63, 63, 70, 0.35);
+      background-color: #050506;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23ffa116' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      color: #e5e1e4;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .problems-filter-select:hover {
+      border-color: rgba(255, 161, 22, 0.35);
+    }
+    .problems-filter-select:focus {
+      border-color: #ffa116;
+      box-shadow: 0 0 12px rgba(255, 161, 22, 0.15);
+    }
+    .problems-filter-select option,
+    .problems-filter-select optgroup {
+      background: #111113;
+      color: #e5e1e4;
+    }
+    @keyframes problemsSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .problems-loading-spin {
+      display: inline-block;
+      animation: problemsSpin 1s linear infinite;
+      color: #ffa116;
+    }
+
     /* Custom scrollbar for dark theme */
     ::-webkit-scrollbar {
       width: 8px;
@@ -1117,44 +1172,33 @@
                 class="pl-9 pr-4 py-1.5 border border-outline-variant/10 rounded-xl text-xs font-semibold bg-surface-container/30 text-on-surface placeholder-on-surface-variant/30 outline-none focus:border-primary/50 transition-colors w-48 sm:w-60"
               />
             </div>
-            <!-- Filter Buttons -->
-            <div class="flex flex-wrap gap-2 table-filters">
-              <button
-                class="px-3.5 py-1.5 border border-outline-variant/20 rounded-xl text-xs font-semibold transition-all duration-300 hover:border-primary/50 text-on-surface-variant hover:text-on-surface cursor-pointer filter-btn active"
-                data-filter="all">All</button>
-              <button
-                class="px-3.5 py-1.5 border border-outline-variant/20 rounded-xl text-xs font-semibold transition-all duration-300 hover:border-primary/50 text-on-surface-variant hover:text-on-surface cursor-pointer filter-btn"
-                data-filter="solved">✓ Solved</button>
-              <button
-                class="px-3.5 py-1.5 border border-outline-variant/20 rounded-xl text-xs font-semibold transition-all duration-300 hover:border-primary/50 text-on-surface-variant hover:text-on-surface cursor-pointer filter-btn"
-                data-filter="pending">◇ Pending</button>
-              <button
-                class="px-3.5 py-1.5 border border-outline-variant/20 rounded-xl text-xs font-semibold transition-all duration-300 hover:border-primary/50 text-on-surface-variant hover:text-on-surface cursor-pointer filter-btn"
-                data-filter="easy">Easy</button>
-              <button
-                class="px-3.5 py-1.5 border border-outline-variant/20 rounded-xl text-xs font-semibold transition-all duration-300 hover:border-primary/50 text-on-surface-variant hover:text-on-surface cursor-pointer filter-btn"
-                data-filter="medium">Medium</button>
-              <button
-                class="px-3.5 py-1.5 border border-outline-variant/20 rounded-xl text-xs font-semibold transition-all duration-300 hover:border-primary/50 text-on-surface-variant hover:text-on-surface cursor-pointer filter-btn"
-                data-filter="hard">Hard</button>
-              <button
-                class="px-3.5 py-1.5 border border-outline-variant/20 rounded-xl text-xs font-semibold transition-all duration-300 hover:border-primary/50 text-on-surface-variant hover:text-on-surface cursor-pointer filter-btn"
-                data-filter="tracked">Tracked</button>
-              <button
-                class="px-3.5 py-1.5 border border-outline-variant/20 rounded-xl text-xs font-semibold transition-all duration-300 hover:border-primary/50 text-on-surface-variant hover:text-on-surface cursor-pointer filter-btn"
-                data-filter="leetcode">LeetCode</button>
-              <button
-                class="px-3.5 py-1.5 border border-outline-variant/20 rounded-xl text-xs font-semibold transition-all duration-300 hover:border-primary/50 text-on-surface-variant hover:text-on-surface cursor-pointer filter-btn"
-                data-filter="star-0">Unrated</button>
-              <button
-                class="px-3.5 py-1.5 border border-outline-variant/20 rounded-xl text-xs font-semibold transition-all duration-300 hover:border-primary/50 text-on-surface-variant hover:text-on-surface cursor-pointer filter-btn"
-                data-filter="star-5">★5</button>
-              <button
-                class="px-3.5 py-1.5 border border-outline-variant/20 rounded-xl text-xs font-semibold transition-all duration-300 hover:border-primary/50 text-on-surface-variant hover:text-on-surface cursor-pointer filter-btn"
-                data-filter="star-4">★4</button>
-              <button
-                class="px-3.5 py-1.5 border border-outline-variant/20 rounded-xl text-xs font-semibold transition-all duration-300 hover:border-primary/50 text-on-surface-variant hover:text-on-surface cursor-pointer filter-btn"
-                data-filter="star-3">★3</button>
+            <!-- Filter dropdown -->
+            <div class="problems-filter-wrap table-filters">
+              <label for="problemsFilter" class="problems-filter-label">Filter</label>
+              <select id="problemsFilter" class="problems-filter-select" aria-label="Filter problems">
+                <option value="all">All problems</option>
+                <optgroup label="Status">
+                  <option value="solved">✓ Solved</option>
+                  <option value="pending">◇ Pending</option>
+                </optgroup>
+                <optgroup label="Difficulty">
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </optgroup>
+                <optgroup label="Source">
+                  <option value="tracked">Tracked (LeetLens)</option>
+                  <option value="leetcode">LeetCode synced</option>
+                </optgroup>
+                <optgroup label="Rating">
+                  <option value="star-0">Unrated</option>
+                  <option value="star-5">★★★★★ (5)</option>
+                  <option value="star-4">★★★★ (4)</option>
+                  <option value="star-3">★★★ (3)</option>
+                  <option value="star-2">★★ (2)</option>
+                  <option value="star-1">★ (1)</option>
+                </optgroup>
+              </select>
             </div>
           </div>
         </div>
