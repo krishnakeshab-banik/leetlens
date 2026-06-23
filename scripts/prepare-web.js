@@ -11,7 +11,7 @@ const SITE_DESCRIPTION =
 const OG_IMAGE = `${SITE_URL}/icons/icon128.png`;
 
 const COPY_DIRS = ['lib', 'assets', 'data', 'icons'];
-const COPY_FILES = ['dashboard.html', 'dashboard.js', 'tailwind.css', 'input.css', 'auth-google.html'];
+const COPY_FILES = ['dashboard.html', 'dashboard.js', 'tailwind.css', 'input.css', 'auth-google.html', 'google27c406003378d777.html'];
 const REQUIRED_LIB_FILES = [
   'dashboard-bundle.js',
   'dashboard-cloud-ui.js',
