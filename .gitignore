@@ -3,7 +3,7 @@ lib/dashboard-bundle.js
 lib/background-bundle.js
 web/lib/dashboard-bundle.js
 web/lib/background-bundle.js
-vercel-analytics.js
+/vercel-analytics.js
 web/vercel-analytics.js
 .env
 .firebase/
