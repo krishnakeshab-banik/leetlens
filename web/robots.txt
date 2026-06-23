@@ -1,0 +1,6 @@
+# LeetLens — https://leetlens.srminsider.in
+User-agent: *
+Allow: /
+Disallow: /auth-google.html
+
+Sitemap: https://leetlens.srminsider.in/sitemap.xml

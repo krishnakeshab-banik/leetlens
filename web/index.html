@@ -2,10 +2,103 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="refresh" content="0;url=dashboard.html" />
-  <title>LeetLens Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LeetLens — LeetCode Analytics Dashboard &amp; Progress Tracker</title>
+  <meta name="description" content="LeetLens is a LeetCode analytics dashboard and progress tracker. Track practice time, sync LeetCode stats, review with spaced repetition, and monitor coding interview prep." />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#0b0b0c" />
+  <link rel="canonical" href="https://leetlens.srminsider.in/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="LeetLens" />
+  <meta property="og:title" content="LeetLens — LeetCode Analytics Dashboard &amp; Progress Tracker" />
+  <meta property="og:description" content="LeetLens is a LeetCode analytics dashboard and progress tracker. Track practice time, sync LeetCode stats, review with spaced repetition, and monitor coding interview prep." />
+  <meta property="og:url" content="https://leetlens.srminsider.in/" />
+  <meta property="og:image" content="https://leetlens.srminsider.in/icons/icon128.png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="LeetLens — LeetCode Analytics Dashboard" />
+  <meta name="twitter:description" content="LeetLens is a LeetCode analytics dashboard and progress tracker. Track practice time, sync LeetCode stats, review with spaced repetition, and monitor coding interview prep." />
+  <meta name="twitter:image" content="https://leetlens.srminsider.in/icons/icon128.png" />
+  <link rel="icon" href="/icons/icon48.png" type="image/png" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://leetlens.srminsider.in/#website",
+        "url": "https://leetlens.srminsider.in/",
+        "name": "LeetLens",
+        "description": "LeetLens is a LeetCode analytics dashboard and progress tracker. Track practice time, sync LeetCode stats, review with spaced repetition, and monitor coding interview prep.",
+        "publisher": { "@id": "https://leetlens.srminsider.in/#organization" }
+      },
+      {
+        "@type": "Organization",
+        "@id": "https://leetlens.srminsider.in/#organization",
+        "name": "LeetLens",
+        "url": "https://leetlens.srminsider.in/",
+        "logo": "https://leetlens.srminsider.in/icons/icon128.png"
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://leetlens.srminsider.in/#software",
+        "name": "LeetLens",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Web, Chrome",
+        "description": "LeetLens is a LeetCode analytics dashboard and progress tracker. Track practice time, sync LeetCode stats, review with spaced repetition, and monitor coding interview prep.",
+        "url": "https://leetlens.srminsider.in/dashboard",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    ]
+  }
+  </script>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: #0b0b0c;
+      color: #e5e1e4;
+      line-height: 1.6;
+    }
+    main { max-width: 720px; margin: 0 auto; padding: 48px 24px 64px; }
+    h1 { font-size: 1.75rem; letter-spacing: -0.02em; margin: 0 0 12px; }
+    .lead { color: #8b949e; margin: 0 0 24px; }
+    ul { padding-left: 1.25rem; color: #c9c4c8; }
+    a { color: #ffa116; }
+    .cta {
+      display: inline-block;
+      margin-top: 28px;
+      padding: 12px 20px;
+      background: #ffa116;
+      color: #0b0b0c;
+      text-decoration: none;
+      font-weight: 700;
+      border-radius: 12px;
+    }
+    .redirect-note { margin-top: 32px; font-size: 0.875rem; color: #8b949e; }
+  </style>
+  <script>
+    (function () {
+      var target = '/dashboard';
+      if (location.pathname === '/' || location.pathname.endsWith('/index.html')) {
+        location.replace(target);
+      }
+    })();
+  </script>
 </head>
 <body>
-  <p>Redirecting to <a href="dashboard.html">LeetLens Dashboard</a>…</p>
+  <main>
+    <h1>LeetLens — LeetCode Analytics &amp; Progress Tracker</h1>
+    <p class="lead">LeetLens is a LeetCode analytics dashboard and progress tracker. Track practice time, sync LeetCode stats, review with spaced repetition, and monitor coding interview prep.</p>
+    <p>LeetLens helps you master coding interview prep with a dedicated LeetCode dashboard, practice analytics, and coding interview analytics in one place.</p>
+    <ul>
+      <li>LeetCode progress tracker with difficulty breakdown and streaks</li>
+      <li>LeetCode analytics dashboard for time spent and problem ratings</li>
+      <li>Spaced revision schedule and weekly planning</li>
+      <li>Chrome extension for automatic LeetCode session tracking</li>
+    </ul>
+    <a class="cta" href="/dashboard">Open LeetLens Dashboard</a>
+    <p class="redirect-note">Redirecting to your dashboard… <a href="/dashboard">Continue now</a></p>
+  </main>
 </body>
 </html>
