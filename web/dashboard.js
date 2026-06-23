@@ -58,6 +58,9 @@ function switchView(viewId) {
   }
   if (currentView === viewId) {
     closeSidebar();
+    if (viewId === 'extension' && window.LeetLensExtension) {
+      window.LeetLensExtension.render();
+    }
     return;
   }
   currentView = viewId;

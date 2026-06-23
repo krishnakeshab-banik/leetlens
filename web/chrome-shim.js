@@ -31,7 +31,20 @@
         if (typeof fn === 'function') messageListeners.push(fn);
       }
     },
-    sendMessage(msg, cb) {
+    sendMessage(targetOrMsg, msgOrCb, cb) {
+      let msg;
+      let callback;
+      if (typeof msgOrCb === 'function') {
+        msg = targetOrMsg;
+        callback = msgOrCb;
+      } else if (typeof cb === 'function') {
+        msg = msgOrCb;
+        callback = cb;
+      } else {
+        msg = targetOrMsg;
+        callback = null;
+      }
+
       const type = msg?.type;
       let response = {};
 
@@ -39,6 +52,8 @@
         response = { records: readStore(STORAGE_KEY, {}), session: readStore(SESSION_KEY, null) };
       } else if (type === 'GET_CURRENT') {
         response = { session: readStore(SESSION_KEY, null) };
+      } else if (type === 'EXTENSION_PING') {
+        response = { ok: false };
       } else if (type === 'SET_STARS') {
         const records = readStore(STORAGE_KEY, {});
         if (records[msg.slug]) {
@@ -65,7 +80,7 @@
         response = { ok: true };
       }
 
-      if (typeof cb === 'function') setTimeout(() => cb(response), 0);
+      if (typeof callback === 'function') setTimeout(() => callback(response), 0);
       return Promise.resolve(response);
     },
     lastError: null

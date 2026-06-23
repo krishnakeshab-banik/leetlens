@@ -13,34 +13,76 @@
   }
 
   function isExtensionContext() {
-    return typeof chrome !== 'undefined' && chrome.runtime?.id && !window.__LEETLENS_WEB__;
+    return typeof chrome !== 'undefined' && chrome.runtime?.id && !isWebDashboard();
   }
 
-  function pingExtension() {
+  function isWebDashboard() {
+    return Boolean(window.__LEETLENS_WEB__)
+      || (typeof location !== 'undefined' && /^https?:/.test(location.protocol));
+  }
+
+  function isWebShimChrome() {
+    return isWebDashboard()
+      && typeof chrome?.runtime?.sendMessage === 'function'
+      && typeof chrome?.runtime?.getManifest !== 'function';
+  }
+
+  function canPingExternalExtension() {
+    if (!chrome?.runtime?.sendMessage) return false;
+    // Local web shim cannot reach the real browser extension.
+    if (isWebShimChrome()) return false;
+    return true;
+  }
+
+  function runtimeSend(message, extensionId, timeoutMs = 3000) {
     return new Promise(resolve => {
       if (!chrome?.runtime?.sendMessage) {
-        resolve({ installed: false, active: false });
+        resolve(null);
         return;
       }
+      let settled = false;
+      const finish = value => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(null), timeoutMs);
+      const onResponse = response => {
+        if (chrome.runtime?.lastError) {
+          finish(null);
+          return;
+        }
+        finish(response ?? null);
+      };
       try {
-        chrome.runtime.sendMessage(EXTENSION_ID, { type: 'EXTENSION_PING' }, response => {
-          if (chrome.runtime.lastError || !response?.ok) {
-            resolve({ installed: false, active: false });
-            return;
-          }
-          resolve({ installed: true, active: true, ...response });
-        });
+        if (extensionId) {
+          chrome.runtime.sendMessage(extensionId, message, onResponse);
+        } else {
+          chrome.runtime.sendMessage(message, onResponse);
+        }
       } catch (_) {
-        resolve({ installed: false, active: false });
+        finish(null);
       }
     });
+  }
+
+  async function pingExtension() {
+    if (!canPingExternalExtension()) {
+      return { installed: false, active: false };
+    }
+    const response = await runtimeSend({ type: 'EXTENSION_PING' }, EXTENSION_ID);
+    if (!response?.ok) {
+      return { installed: false, active: false };
+    }
+    return { installed: true, active: true, ...response };
   }
 
   async function getExtensionStatus() {
     if (isExtensionContext()) {
       const [recordsRes, sessionRes] = await Promise.all([
-        new Promise(r => chrome.runtime.sendMessage({ type: 'GET_RECORDS' }, r)),
-        new Promise(r => chrome.runtime.sendMessage({ type: 'GET_CURRENT' }, r))
+        runtimeSend({ type: 'GET_RECORDS' }),
+        runtimeSend({ type: 'GET_CURRENT' })
       ]);
       const records = recordsRes?.records || {};
       const count = Object.keys(records).length;
@@ -127,11 +169,19 @@
     const container = el('extensionContent');
     if (!container) return;
 
-    const status = await getExtensionStatus();
     const mobile = isMobile();
+    const onWebsite = isWebDashboard() && !isExtensionContext();
 
-    if (status.mode === 'active') {
-      container.innerHTML = `
+    // On the hosted website, show the install page immediately (no blank wait).
+    if (onWebsite) {
+      container.innerHTML = renderMissingPage(mobile);
+    }
+
+    try {
+      const status = await getExtensionStatus();
+
+      if (status.mode === 'active') {
+        container.innerHTML = `
         <div class="ext-hero ext-hero-active">
           <div class="ext-hero-glow"></div>
           <span class="ext-live-dot"></span>
@@ -172,11 +222,11 @@
             <div>✓ Data syncs to cloud when signed in</div>
           </div>
         </div>`;
-      return;
-    }
+        return;
+      }
 
-    if (status.mode === 'connected') {
-      container.innerHTML = `
+      if (status.mode === 'connected') {
+        container.innerHTML = `
         <div class="ext-status-card ext-connected">
           <span class="material-symbols-outlined ext-status-icon ok">extension</span>
           <h2 class="ext-status-title">Extension Installed</h2>
@@ -187,13 +237,16 @@
           </div>
           <button id="extOpenPopup" class="ext-install-btn mt-6">Open Extension Popup</button>
         </div>`;
-      el('extOpenPopup')?.addEventListener('click', () => {
-        window.open(STORE_URL, '_blank');
-      });
-      return;
-    }
+        el('extOpenPopup')?.addEventListener('click', () => {
+          window.open(STORE_URL, '_blank');
+        });
+        return;
+      }
 
-    container.innerHTML = renderMissingPage(mobile);
+      container.innerHTML = renderMissingPage(mobile);
+    } catch (_) {
+      container.innerHTML = renderMissingPage(isMobile());
+    }
   }
 
   window.LeetLensExtension = { render, getExtensionStatus };

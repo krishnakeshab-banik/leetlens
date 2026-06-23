@@ -32,9 +32,20 @@ function copyRecursive(src, dest) {
 }
 
 function patchDashboardHtml(content) {
-  const shim = '  <script src="chrome-shim.js"></script>\n';
-  if (content.includes('chrome-shim.js')) return content;
-  return content.replace(/<body([^>]*)>/, `<body$1>\n${shim}`);
+  const webBoot = [
+    '  <script src="chrome-shim.js"></script>',
+    '  <script>window.__LEETLENS_WEB__ = true;</script>'
+  ].join('\n') + '\n';
+
+  if (!content.includes('chrome-shim.js')) {
+    content = content.replace(/<body([^>]*)>/, `<body$1>\n${webBoot}`);
+  } else if (!content.includes('__LEETLENS_WEB__')) {
+    content = content.replace(
+      /(<script src="chrome-shim\.js"><\/script>\s*)/,
+      `$1  <script>window.__LEETLENS_WEB__ = true;</script>\n`
+    );
+  }
+  return content;
 }
 
 function main() {
