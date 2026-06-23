@@ -20869,54 +20869,6 @@ This typically indicates that your device does not have a healthy Internet conne
     return msg.replace(/^Firebase:\s*/i, "").replace(/^Error\s*\([^)]+\)\.\s*/i, "");
   }
 
-  // src/api-base.js
-  function getApiBaseUrl() {
-    if (typeof window !== "undefined" && window.__LEETLENS_WEB__) {
-      return "";
-    }
-    const configured = process.env.VITE_LEETLENS_API_BASE || "";
-    if (configured) return configured.replace(/\/$/, "");
-    return "https://leetlens.srminsider.in";
-  }
-  function apiUrl(path) {
-    const base = getApiBaseUrl();
-    return `${base}${path.startsWith("/") ? path : `/${path}`}`;
-  }
-
-  // src/welcome-email.js
-  var inFlight = null;
-  async function requestWelcomeEmailIfNeeded() {
-    if (inFlight) return inFlight;
-    inFlight = (async () => {
-      try {
-        const auth2 = getFirebaseAuth();
-        await auth2.authStateReady();
-        const user = auth2.currentUser;
-        if (!user) return;
-        const db2 = getDb();
-        const snap = await getDoc(doc(db2, "users", user.uid));
-        if (snap.exists() && snap.data().welcomeEmailSent) return;
-        const idToken = await user.getIdToken();
-        const res = await fetch(apiUrl("/api/send-welcome"), {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-            "Content-Type": "application/json"
-          }
-        });
-        if (!res.ok) {
-          const text = await res.text();
-          console.warn("[welcome-email]", res.status, text);
-        }
-      } catch (err) {
-        console.warn("[welcome-email]", err);
-      } finally {
-        inFlight = null;
-      }
-    })();
-    return inFlight;
-  }
-
   // src/auth-service.js
   var redirectResultHandled = false;
   function isPendingAuthRedirect() {
@@ -21033,7 +20985,6 @@ This typically indicates that your device does not have a healthy Internet conne
   async function completeSignIn(user) {
     await upsertUserDoc(user);
     await persistAuthState(user);
-    requestWelcomeEmailIfNeeded();
     return user;
   }
   async function signInWithGoogle() {
@@ -21102,7 +21053,6 @@ This typically indicates that your device does not have a healthy Internet conne
     return onAuthStateChanged(auth2, async (user) => {
       if (user) {
         await persistAuthState(user);
-        requestWelcomeEmailIfNeeded();
         callback({ user, loading: false, error: null });
       } else {
         await chrome.storage.local.remove([AUTH_STORAGE_KEY, "cloudSignedIn"]);

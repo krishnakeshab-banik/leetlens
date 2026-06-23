@@ -11,7 +11,7 @@ const SITE_DESCRIPTION =
 const OG_IMAGE = `${SITE_URL}/icons/icon128.png`;
 
 const COPY_DIRS = ['lib', 'assets', 'data', 'icons'];
-const COPY_FILES = ['dashboard.html', 'dashboard.js', 'tailwind.css', 'input.css', 'auth-google.html', 'google27c406003378d777.html'];
+const COPY_FILES = ['dashboard.html', 'dashboard.js', 'tailwind.css', 'input.css', 'auth-google.html', 'google27c406003378d777.html', 'vercel-analytics.js'];
 const REQUIRED_LIB_FILES = [
   'dashboard-bundle.js',
   'dashboard-cloud-ui.js',
@@ -49,6 +49,12 @@ function patchDashboardHtml(content) {
     content = content.replace(
       /(<script src="chrome-shim\.js"><\/script>\s*)/,
       `$1  <script>window.__LEETLENS_WEB__ = true;</script>\n`
+    );
+  }
+  if (!content.includes('vercel-analytics.js')) {
+    content = content.replace(
+      /<\/body>/,
+      '  <script src="vercel-analytics.js"></script>\n</body>'
     );
   }
   return content;
@@ -189,6 +195,7 @@ function writeIndexHtml() {
     <a class="cta" href="/dashboard">Open LeetLens Dashboard</a>
     <p class="redirect-note">Redirecting to your dashboard… <a href="/dashboard">Continue now</a></p>
   </main>
+  <script src="vercel-analytics.js"></script>
 </body>
 </html>`;
   fs.writeFileSync(path.join(webDir, 'index.html'), indexHtml);
