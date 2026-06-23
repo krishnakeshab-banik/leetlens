@@ -9,9 +9,15 @@ const SITE_NAME = 'LeetLens';
 const SITE_DESCRIPTION =
   'LeetLens is a LeetCode analytics dashboard and progress tracker. Track practice time, sync LeetCode stats, review with spaced repetition, and monitor coding interview prep.';
 const OG_IMAGE = `${SITE_URL}/icons/icon128.png`;
+const VERCEL_ANALYTICS_SNIPPET = [
+  '<script>',
+  '  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };',
+  '</script>',
+  '<script defer src="/_vercel/insights/script.js"></script>'
+].join('\n');
 
 const COPY_DIRS = ['lib', 'assets', 'data', 'icons'];
-const COPY_FILES = ['dashboard.html', 'dashboard.js', 'tailwind.css', 'input.css', 'auth-google.html', 'google27c406003378d777.html', 'vercel-analytics.js'];
+const COPY_FILES = ['dashboard.html', 'dashboard.js', 'tailwind.css', 'input.css', 'auth-google.html', 'google27c406003378d777.html'];
 const REQUIRED_LIB_FILES = [
   'dashboard-bundle.js',
   'dashboard-cloud-ui.js',
@@ -51,11 +57,9 @@ function patchDashboardHtml(content) {
       `$1  <script>window.__LEETLENS_WEB__ = true;</script>\n`
     );
   }
-  if (!content.includes('vercel-analytics.js')) {
-    content = content.replace(
-      /<\/body>/,
-      '  <script src="vercel-analytics.js"></script>\n</body>'
-    );
+  if (!content.includes('_vercel/insights/script.js')) {
+    content = content.replace(/\s*<script src="vercel-analytics\.js"><\/script>\s*/g, '\n');
+    content = content.replace(/<\/body>/, `  ${VERCEL_ANALYTICS_SNIPPET}\n</body>`);
   }
   return content;
 }
@@ -195,7 +199,7 @@ function writeIndexHtml() {
     <a class="cta" href="/dashboard">Open LeetLens Dashboard</a>
     <p class="redirect-note">Redirecting to your dashboard… <a href="/dashboard">Continue now</a></p>
   </main>
-  <script src="vercel-analytics.js"></script>
+  ${VERCEL_ANALYTICS_SNIPPET}
 </body>
 </html>`;
   fs.writeFileSync(path.join(webDir, 'index.html'), indexHtml);

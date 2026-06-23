@@ -100,6 +100,9 @@
     <a class="cta" href="/dashboard">Open LeetLens Dashboard</a>
     <p class="redirect-note">Redirecting to your dashboard… <a href="/dashboard">Continue now</a></p>
   </main>
-  <script src="vercel-analytics.js"></script>
+  <script>
+  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>

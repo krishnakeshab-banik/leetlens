@@ -109,14 +109,6 @@ async function run() {
   });
   console.log('Built lib/background-bundle.js');
 
-  await esbuild.build({
-    ...sharedBuildOptions,
-    entryPoints: [path.join(root, 'src/vercel-analytics.js')],
-    bundle: true,
-    outfile: path.join(root, 'vercel-analytics.js')
-  });
-  console.log('Built vercel-analytics.js (web only)');
-
   if (!env.VITE_FIREBASE_API_KEY || !env.VITE_FIREBASE_PROJECT_ID) {
     console.warn('VITE_FIREBASE_* vars not set — cloud sign-in will not work until configured');
   }
