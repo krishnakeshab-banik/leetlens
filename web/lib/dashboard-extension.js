@@ -73,17 +73,62 @@
     return { mode: 'missing', installed: false, inUse: false };
   }
 
+  function renderMissingPage(mobile) {
+    const mobileNote = mobile ? `
+      <div class="glass-panel p-4 sm:p-5 rounded-xl border border-primary/20 bg-primary/5 mb-6">
+        <div class="flex gap-3 items-start">
+          <span class="material-symbols-outlined text-primary shrink-0">laptop_mac</span>
+          <div class="text-sm text-on-surface-variant">
+            <strong class="text-on-surface">Works on laptop &amp; desktop</strong>
+            <p class="mt-1">The LeetLens extension runs in Chrome, Brave, or Edge on a computer. Open this page on a laptop or desktop to install and start tracking on LeetCode.</p>
+          </div>
+        </div>
+      </div>` : '';
+
+    const footerNote = mobile
+      ? '<p class="text-[10px] text-on-surface-variant/60 text-center mt-4">Install from a laptop or desktop browser</p>'
+      : '<p class="text-[10px] text-on-surface-variant/60 text-center mt-4">Not available on mobile · Chrome, Brave, Edge supported</p>';
+
+    return `
+      <div class="ext-hero">
+        <div class="ext-hero-glow"></div>
+        <span class="material-symbols-outlined ext-hero-icon">extension_off</span>
+        <h2 class="ext-hero-title">Extension Not Detected</h2>
+        <p class="ext-hero-sub">Install LeetLens to track time on every LeetCode problem. Your solves sync here automatically — including problems done before installing.</p>
+      </div>
+
+      ${mobileNote}
+
+      <div class="glass-panel p-5 sm:p-6 rounded-xl ext-install-panel">
+        <div class="ext-install-steps">
+          <div class="ext-step"><span class="ext-step-num">1</span><div><strong>Install</strong><p>Add LeetLens from the Chrome Web Store${mobile ? ' on a laptop or desktop' : ' (desktop only)'}</p></div></div>
+          <div class="ext-step"><span class="ext-step-num">2</span><div><strong>Open LeetCode</strong><p>Visit any problem — the timer sidebar appears automatically</p></div></div>
+          <div class="ext-step"><span class="ext-step-num">3</span><div><strong>Sync</strong><p>Sign in here and link LeetCode to merge all your solves</p></div></div>
+        </div>
+        <a href="${STORE_URL}" target="_blank" rel="noopener" class="ext-install-btn">
+          <span class="material-symbols-outlined">download</span>
+          Install from Chrome Web Store
+        </a>
+        ${footerNote}
+      </div>
+
+      <div class="glass-panel p-5 sm:p-6 rounded-xl">
+        <div class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant mb-3">What the extension adds</div>
+        <div class="ext-feature-grid">
+          <div class="ext-feature"><span class="material-symbols-outlined">timer</span><span>Per-problem timer</span></div>
+          <div class="ext-feature"><span class="material-symbols-outlined">star</span><span>Difficulty rating</span></div>
+          <div class="ext-feature"><span class="material-symbols-outlined">cloud_sync</span><span>Cloud backup</span></div>
+          <div class="ext-feature"><span class="material-symbols-outlined">autorenew</span><span>Spaced revision</span></div>
+        </div>
+      </div>`;
+  }
+
   async function render() {
     const container = el('extensionContent');
     if (!container) return;
 
-    if (isMobile()) {
-      container.innerHTML = '';
-      window.switchView?.('overview');
-      return;
-    }
-
     const status = await getExtensionStatus();
+    const mobile = isMobile();
 
     if (status.mode === 'active') {
       container.innerHTML = `
@@ -148,36 +193,7 @@
       return;
     }
 
-    container.innerHTML = `
-      <div class="ext-hero">
-        <div class="ext-hero-glow"></div>
-        <span class="material-symbols-outlined ext-hero-icon">extension_off</span>
-        <h2 class="ext-hero-title">Extension Not Detected</h2>
-        <p class="ext-hero-sub">Install LeetLens to track time on every LeetCode problem. Your solves sync here automatically — including problems done before installing.</p>
-      </div>
-
-      <div class="glass-panel p-5 sm:p-6 rounded-xl ext-install-panel">
-        <div class="ext-install-steps">
-          <div class="ext-step"><span class="ext-step-num">1</span><div><strong>Install</strong><p>Add LeetLens from the Chrome Web Store (desktop only)</p></div></div>
-          <div class="ext-step"><span class="ext-step-num">2</span><div><strong>Open LeetCode</strong><p>Visit any problem — the timer sidebar appears automatically</p></div></div>
-          <div class="ext-step"><span class="ext-step-num">3</span><div><strong>Sync</strong><p>Sign in here and link LeetCode to merge all your solves</p></div></div>
-        </div>
-        <a href="${STORE_URL}" target="_blank" rel="noopener" class="ext-install-btn">
-          <span class="material-symbols-outlined">download</span>
-          Install from Chrome Web Store
-        </a>
-        <p class="text-[10px] text-on-surface-variant/60 text-center mt-4">Not available on mobile · Chrome, Brave, Edge supported</p>
-      </div>
-
-      <div class="glass-panel p-5 sm:p-6 rounded-xl">
-        <div class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant mb-3">What the extension adds</div>
-        <div class="ext-feature-grid">
-          <div class="ext-feature"><span class="material-symbols-outlined">timer</span><span>Per-problem timer</span></div>
-          <div class="ext-feature"><span class="material-symbols-outlined">star</span><span>Difficulty rating</span></div>
-          <div class="ext-feature"><span class="material-symbols-outlined">cloud_sync</span><span>Cloud backup</span></div>
-          <div class="ext-feature"><span class="material-symbols-outlined">autorenew</span><span>Spaced revision</span></div>
-        </div>
-      </div>`;
+    container.innerHTML = renderMissingPage(mobile);
   }
 
   window.LeetLensExtension = { render, getExtensionStatus };

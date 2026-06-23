@@ -40,7 +40,7 @@ const VIEW_TITLES = {
   extension: 'Extension'
 };
 
-const DESKTOP_ONLY_VIEWS = ['extension'];
+const DESKTOP_ONLY_VIEWS = [];
 
 function isMobileViewport() {
   return window.matchMedia('(max-width: 1023px)').matches;
@@ -943,7 +943,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('sidebarOverlay')?.addEventListener('click', closeSidebar);
   window.addEventListener('resize', () => {
     if (window.innerWidth >= 1024) closeSidebar();
-    if (isMobileViewport() && currentView === 'extension') switchView('overview');
   });
 
   // ── Nav view switching ──

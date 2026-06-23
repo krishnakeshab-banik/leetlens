@@ -1,9 +1,9 @@
-// background.js — LeetCode Time Tracker Service Worker
+// background.js — LeetLens Service Worker
 
 try {
   importScripts('lib/background-bundle.js');
 } catch (e) {
-  console.warn('[LCT] Cloud bundle not built yet. Run npm run build.');
+  console.warn('[LeetLens] Cloud bundle not built yet. Run npm run build.');
 }
 
 let activeSession = null; // { slug, title, difficulty, startTime, tabId, paused, pausedAt, activityId }
@@ -132,7 +132,7 @@ function startSession(slug, title, difficulty, tabId) {
     activityId: `${slug}_${now()}`
   };
   trackedTabs[tabId] = { urls: [], startedAt: now() };
-  console.log('[LCT] Session started:', slug);
+  console.log('[LeetLens] Session started:', slug);
 
   if (typeof LeetLensBackground !== 'undefined') {
     LeetLensBackground.handleMessage({ type: 'PAGE_ENTER', slug, title, difficulty });
@@ -155,7 +155,7 @@ async function flushSession() {
     activeSession.difficulty,
     elapsed
   );
-  console.log('[LCT] Flushed session:', activeSession.slug, elapsed + 'ms');
+  console.log('[LeetLens] Flushed session:', activeSession.slug, elapsed + 'ms');
 
   // Cloud activity tracking
   if (activeSession.activityId) {
@@ -181,7 +181,7 @@ function pauseSession() {
   if (!activeSession || activeSession.paused) return;
   activeSession.paused = true;
   activeSession.pausedAt = now();
-  console.log('[LCT] Session paused:', activeSession.slug);
+  console.log('[LeetLens] Session paused:', activeSession.slug);
   broadcastUpdate();
 }
 
@@ -193,7 +193,7 @@ function resumeSession() {
   activeSession.startTime += pausedDuration;
   activeSession.paused = false;
   activeSession.pausedAt = null;
-  console.log('[LCT] Session resumed:', activeSession.slug);
+  console.log('[LeetLens] Session resumed:', activeSession.slug);
   broadcastUpdate();
 }
 
@@ -377,6 +377,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
   })();
   return true; // keep channel open for async
+});
+
+chrome.runtime.onMessageExternal.addListener((msg, _sender, sendResponse) => {
+  if (msg.type !== 'EXTENSION_PING') return;
+  (async () => {
+    const records = await getRecords();
+    const solved = Object.values(records).filter(r => r.solved).length;
+    sendResponse({
+      ok: true,
+      version: chrome.runtime.getManifest().version,
+      recordCount: Object.keys(records).length,
+      solvedCount: solved,
+      inUse: Boolean(activeSession?.slug),
+      currentProblem: activeSession?.title || activeSession?.slug || null
+    });
+  })();
+  return true;
 });
 
 // ── tab/window lifecycle ───────────────────────────────────────────────────

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "LeetCode Time Tracker",
-  "version": "1.0.7",
-  "description": "Track time spent on each LeetCode problem with star ratings",
+  "name": "LeetLens",
+  "version": "1.0.9",
+  "description": "Track LeetCode practice time, sync progress to the cloud, and review with analytics and spaced revision.",
   "permissions": [
     "storage",
     "tabs",
@@ -88,7 +88,7 @@
       "suggested_key": {
         "default": "Ctrl+Shift+L"
       },
-      "description": "Open LeetCode Tracker Dashboard"
+      "description": "Open LeetLens Dashboard"
     }
   },
   "externally_connectable": {

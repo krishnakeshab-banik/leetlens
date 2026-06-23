@@ -49,6 +49,12 @@ function launchGoogleOAuthFlow(authUrl) {
   });
 }
 
+function createOAuthNonce() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
 /** MV3-safe Google sign-in: chrome.identity + Firebase signInWithCredential (no remote scripts). */
 export async function signInWithGoogleExtension() {
   const clientId = getGoogleWebClientId();
@@ -59,12 +65,14 @@ export async function signInWithGoogleExtension() {
   }
 
   const redirectUri = getExtensionRedirectUri();
+  const nonce = createOAuthNonce();
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   authUrl.searchParams.set('client_id', clientId);
   authUrl.searchParams.set('response_type', 'id_token token');
   authUrl.searchParams.set('redirect_uri', redirectUri);
   authUrl.searchParams.set('scope', 'openid email profile');
   authUrl.searchParams.set('prompt', 'select_account');
+  authUrl.searchParams.set('nonce', nonce);
 
   const responseUrl = await launchGoogleOAuthFlow(authUrl.toString());
   const { idToken, accessToken, error, errorDescription } = parseOAuthRedirect(responseUrl);
@@ -79,6 +87,7 @@ export async function signInWithGoogleExtension() {
   const auth = getFirebaseAuth();
   await ensureAuthPersistence(auth);
   const credential = GoogleAuthProvider.credential(idToken, accessToken || null);
+  credential.nonce = nonce;
   const result = await signInWithCredential(auth, credential);
   return result.user;
 }
