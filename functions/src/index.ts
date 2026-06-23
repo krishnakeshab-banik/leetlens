@@ -2,6 +2,7 @@ import { defineSecret } from 'firebase-functions/params';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { initializeApp } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { Resend } from 'resend';
 import * as logger from 'firebase-functions/logger';
@@ -220,6 +221,25 @@ async function sendViaResend(
   logger.info('Email sent', { to, subject, id: data?.id });
 }
 
+function normalizeEmail(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const email = value.trim();
+  return email.includes('@') ? email : null;
+}
+
+async function resolveUserEmail(uid: string, user: UserDoc): Promise<string | null> {
+  const docEmail = normalizeEmail(user.email);
+  if (docEmail) return docEmail;
+
+  try {
+    const authUser = await getAuth().getUser(uid);
+    return normalizeEmail(authUser.email);
+  } catch (err) {
+    logger.warn('[welcome] Could not load Auth user for email lookup', { uid, error: err });
+    return null;
+  }
+}
+
 async function deliverWelcomeEmail(
   db: FirebaseFirestore.Firestore,
   resend: Resend,
@@ -227,38 +247,53 @@ async function deliverWelcomeEmail(
   uid: string
 ): Promise<'sent' | 'skipped'> {
   const ref = db.collection('users').doc(uid);
+  const existing = await ref.get();
+  if (!existing.exists) {
+    logger.info('[welcome] Skipped — user doc missing', { uid });
+    return 'skipped';
+  }
 
-  const user = await db.runTransaction(async (t) => {
+  const existingData = existing.data() as UserDoc;
+  if (existingData.welcomeEmailSent) return 'skipped';
+
+  const email = await resolveUserEmail(uid, existingData);
+  if (!email) {
+    logger.info('[welcome] Skipped — no email on user doc or Auth', { uid });
+    return 'skipped';
+  }
+
+  const claimed = await db.runTransaction(async (t) => {
     const snap = await t.get(ref);
     const data = snap.data() as UserDoc | undefined;
-    if (!data?.email || data.welcomeEmailSent) return null;
+    if (!data || data.welcomeEmailSent) return false;
     t.update(ref, {
       welcomeEmailSent: true,
       welcomeEmailSentAt: FieldValue.serverTimestamp()
     });
-    return data;
+    return true;
   });
 
-  if (!user) return 'skipped';
+  if (!claimed) return 'skipped';
 
+  const user: UserDoc = { ...existingData, email };
   const name = user.displayName?.split(' ')[0] || 'Coder';
 
   try {
     await sendViaResend(
       resend,
       from,
-      user.email!,
+      email,
       `🎉 Welcome to LeetLens, ${name}! Let's build your streak`,
       buildWelcomeEmailHtml(user)
     );
-    logger.info('[welcome] Delivered', { uid, email: user.email });
+    logger.info('[welcome] Delivered', { uid, email });
     return 'sent';
   } catch (err) {
     await ref.update({
       welcomeEmailSent: false,
       welcomeEmailSentAt: FieldValue.delete()
     });
-    logger.error('[welcome] Failed', { uid, email: user.email, error: err });
+    logger.error('[welcome] Failed', { uid, email, error: err });
     throw err;
   }
 }
@@ -322,17 +357,23 @@ export const sendWelcomeEmail = onDocumentCreated(
 
     const uid = event.params.uid;
     const user = snap.data() as UserDoc;
-
-    if (!user.createdAt) {
-      logger.info('[welcome] Skipped — no createdAt (not a new signup)', { uid });
-      return;
-    }
+    logger.info('[welcome] Triggered for new user doc', {
+      uid,
+      hasEmail: Boolean(normalizeEmail(user.email)),
+      hasCreatedAt: Boolean(user.createdAt)
+    });
 
     const db = getFirestore();
     const resend = new Resend(resendApiKey.value());
     const from = emailFrom.value();
 
-    await deliverWelcomeEmail(db, resend, from, uid);
+    try {
+      const result = await deliverWelcomeEmail(db, resend, from, uid);
+      logger.info('[welcome] Trigger finished', { uid, result });
+    } catch (err) {
+      logger.error('[welcome] Trigger failed', { uid, error: err });
+      throw err;
+    }
   }
 );
 
@@ -361,17 +402,13 @@ export const backfillWelcomeEmails = onSchedule(
       const user = doc.data() as UserDoc;
       const uid = user.uid || doc.id;
 
-      if (!user.email) {
-        skipped++;
-        continue;
-      }
-
       try {
         const result = await deliverWelcomeEmail(db, resend, from, uid);
         if (result === 'sent') sent++;
         else skipped++;
-      } catch {
+      } catch (err) {
         failed++;
+        logger.error('[welcome-backfill] User failed', { uid, error: err });
       }
     }
 

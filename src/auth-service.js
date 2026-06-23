@@ -130,13 +130,18 @@ async function upsertUserDoc(user) {
     photoURL: user.photoURL || '',
     lastLoginAt: now
   };
-  if (!snap.exists()) {
-    payload.createdAt = now;
-    payload.emailRemindersEnabled = true;
-    payload.reminderTime = '10:00';
-    payload.timezone = 'Asia/Kolkata';
-  }
   try {
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        ...payload,
+        createdAt: now,
+        emailRemindersEnabled: true,
+        reminderTime: '10:00',
+        timezone: 'Asia/Kolkata'
+      });
+      return;
+    }
+
     await setDoc(ref, payload, { merge: true });
   } catch (err) {
     throw wrapFirestoreError(err);
