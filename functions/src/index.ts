@@ -220,6 +220,49 @@ async function sendViaResend(
   logger.info('Email sent', { to, subject, id: data?.id });
 }
 
+async function deliverWelcomeEmail(
+  db: FirebaseFirestore.Firestore,
+  resend: Resend,
+  from: string,
+  uid: string
+): Promise<'sent' | 'skipped'> {
+  const ref = db.collection('users').doc(uid);
+
+  const user = await db.runTransaction(async (t) => {
+    const snap = await t.get(ref);
+    const data = snap.data() as UserDoc | undefined;
+    if (!data?.email || data.welcomeEmailSent) return null;
+    t.update(ref, {
+      welcomeEmailSent: true,
+      welcomeEmailSentAt: FieldValue.serverTimestamp()
+    });
+    return data;
+  });
+
+  if (!user) return 'skipped';
+
+  const name = user.displayName?.split(' ')[0] || 'Coder';
+
+  try {
+    await sendViaResend(
+      resend,
+      from,
+      user.email!,
+      `🎉 Welcome to LeetLens, ${name}! Let's build your streak`,
+      buildWelcomeEmailHtml(user)
+    );
+    logger.info('[welcome] Delivered', { uid, email: user.email });
+    return 'sent';
+  } catch (err) {
+    await ref.update({
+      welcomeEmailSent: false,
+      welcomeEmailSentAt: FieldValue.delete()
+    });
+    logger.error('[welcome] Failed', { uid, email: user.email, error: err });
+    throw err;
+  }
+}
+
 async function getYesterdayReport(
   db: FirebaseFirestore.Firestore,
   uid: string,
@@ -280,39 +323,64 @@ export const sendWelcomeEmail = onDocumentCreated(
     const uid = event.params.uid;
     const user = snap.data() as UserDoc;
 
-    if (user.welcomeEmailSent) return;
-    if (!user.email) {
-      logger.info('[welcome] Skipped — no email on user doc', { uid });
-      return;
-    }
     if (!user.createdAt) {
       logger.info('[welcome] Skipped — no createdAt (not a new signup)', { uid });
       return;
     }
 
+    const db = getFirestore();
     const resend = new Resend(resendApiKey.value());
     const from = emailFrom.value();
-    const name = user.displayName?.split(' ')[0] || 'Coder';
 
-    try {
-      await sendViaResend(
-        resend,
-        from,
-        user.email,
-        `🎉 Welcome to LeetLens, ${name}! Let's build your streak`,
-        buildWelcomeEmailHtml(user)
-      );
+    await deliverWelcomeEmail(db, resend, from, uid);
+  }
+);
 
-      await getFirestore().collection('users').doc(uid).update({
-        welcomeEmailSent: true,
-        welcomeEmailSentAt: FieldValue.serverTimestamp()
-      });
+/** One-time catch-up for users who signed up before welcome emails existed. */
+export const backfillWelcomeEmails = onSchedule(
+  {
+    schedule: 'every 5 minutes',
+    timeZone: 'Asia/Kolkata',
+    secrets: [resendApiKey, emailFrom]
+  },
+  async () => {
+    const db = getFirestore();
+    const resend = new Resend(resendApiKey.value());
+    const from = emailFrom.value();
 
-      logger.info('[welcome] Delivered', { uid, email: user.email });
-    } catch (err) {
-      logger.error('[welcome] Failed', { uid, email: user.email, error: err });
-      throw err;
+    const usersSnap = await db.collection('users')
+      .where('welcomeEmailSent', '!=', true)
+      .limit(50)
+      .get();
+
+    let sent = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const doc of usersSnap.docs) {
+      const user = doc.data() as UserDoc;
+      const uid = user.uid || doc.id;
+
+      if (!user.email) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        const result = await deliverWelcomeEmail(db, resend, from, uid);
+        if (result === 'sent') sent++;
+        else skipped++;
+      } catch {
+        failed++;
+      }
     }
+
+    logger.info('[welcome-backfill] Run complete', {
+      sent,
+      skipped,
+      failed,
+      queued: usersSnap.size
+    });
   }
 );
 
