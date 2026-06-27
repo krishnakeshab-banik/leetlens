@@ -15,8 +15,15 @@
   function rememberJoinCode(code) {
     if (!code) return;
     try {
-      sessionStorage.setItem(JOIN_CODE_KEY, code);
-      sessionStorage.setItem(PENDING_JOIN_KEY, code);
+      sessionStorage.setItem(JOIN_CODE_KEY, String(code).trim().toUpperCase());
+    } catch (_) {}
+  }
+
+  function markPendingAutoJoin(code) {
+    if (!code) return;
+    rememberJoinCode(code);
+    try {
+      sessionStorage.setItem(PENDING_JOIN_KEY, String(code).trim().toUpperCase());
     } catch (_) {}
   }
 
@@ -64,16 +71,21 @@
     getJoinCodeFromUrl,
     readStoredJoinCode,
     rememberJoinCode,
+    markPendingAutoJoin,
     clearPendingJoin,
     openSquadsJoinFlow,
     hasPendingJoin() {
-      return !!(readStoredJoinCode() || getJoinCodeFromUrl());
+      try {
+        return !!sessionStorage.getItem(PENDING_JOIN_KEY);
+      } catch (_) {
+        return false;
+      }
     }
   };
 
   const inviteCode = getJoinCodeFromUrl();
   if (inviteCode) {
-    rememberJoinCode(inviteCode);
+    markPendingAutoJoin(inviteCode);
     const boot = () => {
       if (!window.LeetLensSquadsUI) {
         window.setTimeout(boot, 50);

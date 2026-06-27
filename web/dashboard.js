@@ -1181,6 +1181,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const joinCode = getJoinCodeFromUrl();
     if (joinCode) {
       window.LeetLensSquadsJoin?.rememberJoinCode?.(joinCode);
+      window.LeetLensSquadsJoin?.markPendingAutoJoin?.(joinCode);
       switchView('squads');
       return;
     }
