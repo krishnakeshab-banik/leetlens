@@ -886,6 +886,151 @@
   line-height: 1.5;
 }
 
+.squads-detail-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(14, 14, 16, 0.6);
+  border: 1px solid rgba(63, 63, 70, 0.35);
+  width: fit-content;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.squads-detail-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #8b949e;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.squads-detail-tab:hover {
+  color: #e5e1e4;
+  background: rgba(255, 161, 22, 0.08);
+}
+
+.squads-detail-tab.active {
+  color: #ffa116;
+  background: rgba(255, 161, 22, 0.15);
+}
+
+.squads-detail-hero-compact {
+  margin-bottom: 4px;
+}
+
+.squads-rules-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.squads-rules-section {
+  padding: 18px 20px;
+}
+
+.squads-rules-section-muted {
+  opacity: 0.92;
+  border-style: dashed;
+}
+
+.squads-rules-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.squads-rules-section-head .material-symbols-outlined {
+  font-size: 22px;
+  color: #ffa116;
+}
+
+.squads-rules-section-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #e5e1e4;
+}
+
+.squads-rules-text {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #c9c4c8;
+}
+
+.squads-rules-text strong {
+  color: #ffa116;
+  font-weight: 700;
+}
+
+.squads-rules-muted {
+  color: #8b949e;
+  font-size: 13px;
+  margin-bottom: 0;
+}
+
+.squads-rules-list {
+  margin: 0;
+  padding-left: 1.15rem;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #c9c4c8;
+}
+
+.squads-rules-list li {
+  margin-bottom: 8px;
+}
+
+.squads-rules-list li:last-child {
+  margin-bottom: 0;
+}
+
+.squads-rules-weights {
+  list-style: none;
+  margin-left: -1.15rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(255, 161, 22, 0.08);
+  border: 1px solid rgba(255, 161, 22, 0.2);
+}
+
+.squads-rules-weights strong {
+  color: #ffa116;
+  font-size: 16px;
+}
+
+.squads-rules-schedule {
+  margin-top: 4px;
+}
+
+.squads-rules-goals li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  margin-left: -1.15rem;
+}
+
+.squads-rules-goal-icon {
+  font-size: 18px;
+  color: #ffa116;
+}
+
 .squads-section-label {
   font-size: 10px;
   font-weight: 800;

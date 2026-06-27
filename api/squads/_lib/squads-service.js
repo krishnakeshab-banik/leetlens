@@ -125,7 +125,7 @@ async function ensureCompetitionBaselines(db, squad) {
 async function updateLeaderboardForUser(db, squadId, uid, member, baseline, progress, scoringMode, squad = null) {
   const status = squad ? squadStatus(squad) : 'active';
   const deltas = status === 'scheduled'
-    ? { easyDelta: 0, mediumDelta: 0, hardDelta: 0, totalDelta: 0, githubDelta: 0 }
+    ? { easyDelta: 0, mediumDelta: 0, hardDelta: 0, totalDelta: 0, githubDelta: 0, lastSolveAt: null }
     : pickDeltas(progress, baseline, squad || {});
   const points = computePoints(deltas, scoringMode);
   const entry = {
@@ -135,6 +135,7 @@ async function updateLeaderboardForUser(db, squadId, uid, member, baseline, prog
     squadNickname: member.squadNickname || null,
     ...deltas,
     points,
+    lastSolveAt: deltas.lastSolveAt ? new Date(deltas.lastSolveAt) : null,
     lastUpdatedAt: new Date()
   };
   await db.collection('squadLeaderboard').updateOne(
@@ -567,7 +568,7 @@ function buildResultsAnalysis(squad, ranked, uid) {
       icon: 'insights',
       title: 'Winning margin',
       text: gap === 0
-        ? 'Top competitors tied on points — final ranks used hard/medium solve tie-breakers.'
+        ? 'Top competitors tied on points — ranks used hard/medium counts, then who reached the score earliest.'
         : `${publicDisplayName(winner)} led by ${gap} point${gap === 1 ? '' : 's'} over 2nd place.`
     });
   }

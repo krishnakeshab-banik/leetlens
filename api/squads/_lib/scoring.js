@@ -8,7 +8,7 @@ function computeDeltas(current, baseline) {
   const hard = Math.max(0, (current.hardSolved || 0) - (baseline.hard || 0));
   const total = Math.max(0, (current.totalSolved || 0) - (baseline.total || 0));
   const github = Math.max(0, (current.githubContributions || 0) - (baseline.githubContributions || 0));
-  return { easyDelta: easy, mediumDelta: medium, hardDelta: hard, totalDelta: total, githubDelta: github };
+  return { easyDelta: easy, mediumDelta: medium, hardDelta: hard, totalDelta: total, githubDelta: github, lastSolveAt: null };
 }
 
 /** Only count problems not already solved at baseline (re-submissions excluded). */
@@ -32,11 +32,14 @@ function computeSlugDeltas(progress, baseline, squad = {}) {
   let easy = 0;
   let medium = 0;
   let hard = 0;
+  let lastSolveAt = 0;
   newProblems.forEach(p => {
     const d = String(p.difficulty || '').toLowerCase();
     if (d === 'easy') easy++;
     else if (d === 'medium') medium++;
     else if (d === 'hard') hard++;
+    const solvedAt = toMs(p.solvedAt);
+    if (solvedAt > lastSolveAt) lastSolveAt = solvedAt;
   });
 
   const github = Math.max(0, (progress.githubContributions || 0) - (baseline.githubContributions || 0));
@@ -45,7 +48,8 @@ function computeSlugDeltas(progress, baseline, squad = {}) {
     mediumDelta: medium,
     hardDelta: hard,
     totalDelta: newProblems.length,
-    githubDelta: github
+    githubDelta: github,
+    lastSolveAt: lastSolveAt || null
   };
 }
 
@@ -63,12 +67,18 @@ function computePoints(deltas, scoringMode) {
     + deltas.hardDelta * WEIGHTS.hard;
 }
 
+function tieBreakTime(entry) {
+  const t = toMs(entry?.lastSolveAt);
+  return t > 0 ? t : Number.MAX_SAFE_INTEGER;
+}
+
 function rankEntries(entries) {
   return [...entries].sort((a, b) => {
     if (b.points !== a.points) return b.points - a.points;
     if (b.hardDelta !== a.hardDelta) return b.hardDelta - a.hardDelta;
     if (b.mediumDelta !== a.mediumDelta) return b.mediumDelta - a.mediumDelta;
-    return b.totalDelta - a.totalDelta;
+    if (b.totalDelta !== a.totalDelta) return b.totalDelta - a.totalDelta;
+    return tieBreakTime(a) - tieBreakTime(b);
   }).map((e, i) => ({ ...e, rank: i + 1 }));
 }
 
@@ -97,6 +107,7 @@ module.exports = {
   pickDeltas,
   computePoints,
   rankEntries,
+  tieBreakTime,
   squadStatus,
   toMs
 };
