@@ -73,6 +73,18 @@ function switchView(viewId) {
     if (viewId === 'extension' && window.LeetLensExtension) {
       window.LeetLensExtension.render();
     }
+    if (viewId === 'squads' && window.LeetLensSquads) {
+      const joinCode = window.LeetLensSquadsJoin?.readStoredJoinCode?.()
+        || sessionStorage.getItem('squadsJoinCode')
+        || getJoinCodeFromUrl();
+      if (joinCode || window.LeetLensSquadsJoin?.hasPendingJoin?.()) {
+        const code = joinCode || window.LeetLensSquadsJoin?.readStoredJoinCode?.();
+        if (code) window.LeetLensSquadsJoin?.markPendingAutoJoin?.(code);
+        window.LeetLensSquads.render('squads', code
+          ? { code, tab: 'join', autoJoin: true }
+          : undefined);
+      }
+    }
     return;
   }
   currentView = viewId;

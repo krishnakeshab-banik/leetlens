@@ -397,6 +397,34 @@
       || '';
   }
 
+  function syncInviteJoinContext() {
+    const code = String(readInviteCode() || '').trim().toUpperCase();
+    const pending = window.LeetLensSquadsJoin?.hasPendingJoin?.();
+    if (!code || !pending) return code;
+    presetJoinCode = code;
+    currentTab = 'join';
+    return code;
+  }
+
+  function isInviteJoinFlow() {
+    const code = syncInviteJoinContext();
+    return !!(code && (currentTab === 'join' || window.LeetLensSquadsJoin?.hasPendingJoin?.()));
+  }
+
+  let cloudAuthUnsub = null;
+  let renderHubGeneration = 0;
+
+  function bindCloudAuthRefresh() {
+    if (cloudAuthUnsub || !window.LeetLensCloud?.onCloudStateChange) return;
+    cloudAuthUnsub = window.LeetLensCloud.onCloudStateChange((state) => {
+      const squadsActive = document.getElementById('view-squads')?.classList.contains('active');
+      if (!squadsActive || state.loading) return;
+      if (!window.LeetLensSquadsJoin?.hasPendingJoin?.()) return;
+      const container = mount();
+      if (container) renderHub(container);
+    });
+  }
+
   function autoJoinStorageKey(code) {
     return `squads_auto_join_${String(code || '').toUpperCase()}`;
   }
@@ -1466,6 +1494,7 @@
 
   async function renderHub(container) {
     if (!container) return;
+    const generation = ++renderHubGeneration;
 
     try {
       if (window.LeetLensCloud?.ensureAuthBoot) {
@@ -1473,8 +1502,22 @@
       }
     } catch (_) {}
 
-    const inviteCode = readInviteCode();
-    const isInviteJoin = currentTab === 'join' && !!inviteCode;
+    if (generation !== renderHubGeneration) return;
+
+    const inviteCode = syncInviteJoinContext();
+    const isInviteJoin = isInviteJoinFlow();
+
+    if (isInviteJoin) {
+      renderHubShell(container);
+      const waiting = el('squadsTabContent');
+      if (waiting) waiting.innerHTML = loadingSkeleton(3);
+
+      if (window.LeetLensSquadsJoin?.waitForCloudUser) {
+        await window.LeetLensSquadsJoin.waitForCloudUser(15000);
+      }
+      if (generation !== renderHubGeneration) return;
+    }
+
     const user = window.LeetLensCloud?.getCloudState()?.user;
 
     if (!user) {
@@ -1536,6 +1579,7 @@
 
   function render(viewId, params) {
     stopPolling();
+    bindCloudAuthRefresh();
     const container = mount();
     if (!container) return;
 

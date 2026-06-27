@@ -51,6 +51,53 @@
     } catch (_) {}
   }
 
+  function waitForCloudUser(timeoutMs = 15000) {
+    return new Promise((resolve) => {
+      const cloud = window.LeetLensCloud;
+      if (!cloud?.getCloudState) {
+        resolve(null);
+        return;
+      }
+
+      let settled = false;
+      let unsub = null;
+      let timer = null;
+
+      const finish = (user) => {
+        if (settled) return;
+        settled = true;
+        if (typeof unsub === 'function') unsub();
+        if (timer) clearTimeout(timer);
+        resolve(user || null);
+      };
+
+      const check = () => {
+        const state = cloud.getCloudState() || {};
+        if (state.user && !state.loading) {
+          finish(state.user);
+          return true;
+        }
+        return false;
+      };
+
+      if (check()) return;
+
+      if (cloud.ensureAuthBoot) {
+        cloud.ensureAuthBoot().then(() => {
+          if (check()) return;
+        }).catch(() => {});
+      }
+
+      if (cloud.onCloudStateChange) {
+        unsub = cloud.onCloudStateChange((state) => {
+          if (state.user && !state.loading) finish(state.user);
+        });
+      }
+
+      timer = setTimeout(() => finish(cloud.getCloudState()?.user || null), timeoutMs);
+    });
+  }
+
   async function resumeJoinFlowWhenReady() {
     const code = readStoredJoinCode() || getJoinCodeFromUrl();
     if (!code) return;
@@ -58,13 +105,15 @@
     rememberJoinCode(code);
     markPendingAutoJoin(code);
 
-    window.switchView?.('squads');
-
     try {
       if (window.LeetLensCloud?.ensureAuthBoot) {
         await window.LeetLensCloud.ensureAuthBoot();
       }
     } catch (_) {}
+
+    await waitForCloudUser(15000);
+
+    window.switchView?.('squads');
 
     if (window.LeetLensSquads) {
       window.LeetLensSquads.render('squads', {
@@ -102,6 +151,7 @@
     markPendingAutoJoin,
     clearPendingJoin,
     cleanInviteUrl,
+    waitForCloudUser,
     openSquadsJoinFlow,
     resumeJoinFlowWhenReady,
     hasPendingJoin() {
