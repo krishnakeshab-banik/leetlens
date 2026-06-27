@@ -76,6 +76,12 @@
     get: (id) => request(`/${id}`),
     leaderboard: (id) => request(`/${id}/leaderboard`),
     sync: (id) => request(`/${id}/sync`, { method: 'POST' }),
-    results: (id) => request(`/${id}/results`)
+    results: (id) => request(`/${id}/results`),
+    cancel: (id) => request(`/${id}/cancel`, { method: 'POST' }),
+    removeMember: (id, userId) => request(`/${id}/members`, {
+      method: 'DELETE',
+      body: JSON.stringify({ userId })
+    }),
+    deleteHistory: (body) => request('/history', { method: 'DELETE', body: JSON.stringify(body) })
   };
 })();

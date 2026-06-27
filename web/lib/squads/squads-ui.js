@@ -24,6 +24,8 @@
   let subViewId = null;
   let detailTab = 'leaderboard';
   let presetJoinCode = '';
+  let detailCache = { squadId: null, squad: null, lb: null, fetchedAt: 0 };
+  const DETAIL_CACHE_MS = 15000;
 
   function el(id) { return document.getElementById(id); }
 
@@ -268,7 +270,7 @@
         detailTab = next;
         stopPolling();
         const tabContent = el('squadsTabContent');
-        if (tabContent) renderDetailTab(tabContent, squadId);
+        if (tabContent) renderDetailTab(tabContent, squadId, { soft: true });
         const shell = mount()?.querySelector('.squads-title');
         const sub = mount()?.querySelector('.squads-sub');
         if (shell) shell.textContent = detailTab === 'rules' ? 'Competition Rules' : 'Squad Leaderboard';
@@ -277,6 +279,35 @@
           : 'Delta scoring — only progress during the competition window counts.';
       });
     });
+  }
+
+  async function fetchDetailData(squadId, { force = false, needLeaderboard = true } = {}) {
+    const cached = !force
+      && detailCache.squadId === squadId
+      && detailCache.squad
+      && Date.now() - detailCache.fetchedAt < DETAIL_CACHE_MS;
+    if (cached) {
+      if (!needLeaderboard || detailCache.lb) return detailCache;
+    }
+
+    const squad = cached && detailCache.squad
+      ? detailCache.squad
+      : await window.SquadsAPI.get(squadId);
+
+    let lb = cached && detailCache.lb ? detailCache.lb : null;
+    if (needLeaderboard && !lb) {
+      try {
+        lb = await window.SquadsAPI.leaderboard(squadId);
+      } catch (err) {
+        if (/cancelled|Competition was cancelled/i.test(err?.message || '')) {
+          err.code = 'CANCELLED';
+        }
+        throw err;
+      }
+    }
+
+    detailCache = { squadId, squad, lb, fetchedAt: Date.now() };
+    return detailCache;
   }
 
   function formatTimeLeft(endMs) {
@@ -288,6 +319,21 @@
     if (d > 0) return `${d}d ${h}h remaining`;
     if (h > 0) return `${h}h ${m}m remaining`;
     return `${m}m remaining`;
+  }
+
+  function formatTimeUntil(targetMs) {
+    const diff = Math.max(0, targetMs - Date.now());
+    if (diff <= 0) return 'Starting soon';
+    const d = Math.floor(diff / 86400000);
+    const h = Math.floor((diff % 86400000) / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    if (d > 0) return `Starts in ${d}d ${h}h`;
+    if (h > 0) return `Starts in ${h}h ${m}m`;
+    return `Starts in ${m}m`;
+  }
+
+  function invalidateDetailCache() {
+    detailCache = { squadId: null, squad: null, lb: null, fetchedAt: 0 };
   }
 
   function timeProgressPercent(startMs, endMs) {
@@ -479,16 +525,17 @@
     return `Ends automatically: ${end.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`;
   }
 
-  function renderCountdown(endMs, containerId, onEnded) {
+  function renderCountdown(targetMs, containerId, onReached, options = {}) {
     clearInterval(countdownTimer);
     const node = el(containerId);
-    if (!node || !endMs) return;
+    if (!node || !targetMs) return;
+    const endedLabel = options.endedLabel || 'Ended';
     function tick() {
-      const diff = Math.max(0, endMs - Date.now());
+      const diff = Math.max(0, targetMs - Date.now());
       if (diff <= 0) {
-        node.innerHTML = '<span class="squads-status-pill squads-status-ended">Ended</span>';
+        node.innerHTML = `<span class="squads-status-pill squads-status-${options.endedStatus || 'ended'}">${endedLabel}</span>`;
         clearInterval(countdownTimer);
-        onEnded?.();
+        onReached?.();
         return;
       }
       const s = Math.floor(diff / 1000);
@@ -505,6 +552,61 @@
     }
     tick();
     countdownTimer = setInterval(tick, 1000);
+  }
+
+  function renderMemberRoster(members, options = {}) {
+    const { isHost, hostUserId, showRemove } = options;
+    if (!members?.length) {
+      return emptyState('groups', 'No members yet', 'Share the invite link so others can join before the competition starts.');
+    }
+    return `<div class="squads-roster">${members.map(m => `
+      <div class="squads-roster-row">
+        <div class="squads-roster-info">
+          <strong>${escapeHtml(m.displayLabel || m.displayName || 'Member')}</strong>
+          ${m.role === 'creator' ? '<span class="squads-host-badge">Host</span>' : ''}
+          ${m.joinedAt ? `<span class="squads-roster-joined">Joined ${formatDateTime(m.joinedAt)}</span>` : ''}
+        </div>
+        ${isHost && showRemove && m.userId !== hostUserId
+          ? `<button type="button" class="squads-btn squads-btn-ghost squads-btn-sm squads-remove-member" data-user-id="${escapeHtml(m.userId)}" title="Remove member">Remove</button>`
+          : ''}
+      </div>`).join('')}</div>`;
+  }
+
+  function wireHostActions(container, squadId, squad, lb) {
+    container.querySelectorAll('.squads-remove-member').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const userId = btn.dataset.userId;
+        const label = btn.closest('.squads-roster-row')?.querySelector('strong')?.textContent || 'this member';
+        if (!userId || !confirm(`Remove ${label} from the squad?`)) return;
+        btn.disabled = true;
+        try {
+          await window.SquadsAPI.removeMember(squadId, userId);
+          invalidateDetailCache();
+          const tabContent = el('squadsTabContent');
+          if (tabContent) renderDetailTab(tabContent, squadId, { force: true });
+        } catch (err) {
+          alert(err.message);
+          btn.disabled = false;
+        }
+      });
+    });
+
+    el('squadsCancelSquad')?.addEventListener('click', async () => {
+      if (!confirm('Cancel this squad for everyone? This cannot be undone.')) return;
+      const btn = el('squadsCancelSquad');
+      if (btn) btn.disabled = true;
+      try {
+        await window.SquadsAPI.cancel(squadId);
+        invalidateDetailCache();
+        subView = null;
+        subViewId = null;
+        currentTab = 'active';
+        renderHub(mount());
+      } catch (err) {
+        alert(err.message);
+        if (btn) btn.disabled = false;
+      }
+    });
   }
 
   function renderPodium(podium) {
@@ -974,9 +1076,11 @@
       content.innerHTML = `${bannerHtml}<div class="squads-active-grid">${squads.map(s => {
         const startMs = parseTs(s.startTime);
         const endMs = parseTs(s.endTime);
-        const progress = timeProgressPercent(startMs, endMs);
+        const isScheduled = s.status === 'scheduled';
+        const progress = isScheduled ? 0 : timeProgressPercent(startMs, endMs);
+        const timeLabel = isScheduled ? formatTimeUntil(startMs) : formatTimeLeft(endMs);
         const isNew = createdId && s.squadId === createdId;
-        return `<article class="squads-active-card-v2${isNew ? ' squads-active-card-new' : ''}" data-squad-id="${escapeHtml(s.squadId)}">
+        return `<article class="squads-active-card-v2${isNew ? ' squads-active-card-new' : ''}" data-squad-id="${escapeHtml(s.squadId)}" data-status="${escapeHtml(s.status || 'active')}">
           <div class="squads-active-card-top">
             <span class="squads-status-pill squads-status-${s.status}">${s.status}</span>
             <span class="squads-sprint-badge">${formatSprintType(s.competitionType)}</span>
@@ -987,9 +1091,9 @@
             <div class="squads-active-stat"><span>Your Rank</span><strong>#${s.rank || '—'}</strong></div>
             <div class="squads-active-stat"><span>Points</span><strong>${s.points || 0}</strong></div>
             <div class="squads-active-stat"><span>Members</span><strong>${s.memberCount}</strong></div>
-            <div class="squads-active-stat"><span>Time</span><strong>${formatTimeLeft(endMs)}</strong></div>
+            <div class="squads-active-stat"><span>Time</span><strong>${timeLabel}</strong></div>
           </div>
-          <div class="squads-progress-bar" title="${progress}% elapsed"><div class="squads-progress-fill" style="width:${progress}%"></div></div>
+          <div class="squads-progress-bar" title="${isScheduled ? 'Waiting for start' : `${progress}% elapsed`}"><div class="squads-progress-fill" style="width:${progress}%"></div></div>
           <div class="squads-btn-row squads-active-actions">
             <button type="button" class="squads-btn squads-btn-primary squads-open-btn">Leaderboard</button>
             <button type="button" class="squads-btn squads-btn-ghost squads-rules-btn">Rules</button>
@@ -1005,6 +1109,10 @@
         card.querySelector('.squads-rules-btn')?.addEventListener('click', () => openDetail(id, { tab: 'rules' }));
         card.querySelector('.squads-sync-btn')?.addEventListener('click', async (e) => {
           e.stopPropagation();
+          if (card.dataset.status === 'scheduled') {
+            alert('Competition has not started yet. Sync will be available once it begins.');
+            return;
+          }
           try { await window.SquadsAPI.sync(id); renderActiveTab(content); }
           catch (err) { alert(err.message); }
         });
@@ -1035,6 +1143,7 @@
     content.innerHTML = loadingSkeleton(4);
     try {
       const data = await window.SquadsAPI.history();
+      const squads = data.squads || [];
       content.innerHTML = `<div class="squads-card squads-stats-row">
         <div><div class="squads-you-stat-label">Wins</div><div class="squads-you-stat-val">${data.stats.wins}</div></div>
         <div><div class="squads-you-stat-label">Runner Ups</div><div class="squads-you-stat-val">${data.stats.runnerUps}</div></div>
@@ -1044,15 +1153,65 @@
       <div class="squads-achievements mt-4">${(data.achievements || []).map(a =>
         `<div class="squads-achievement"><span>${a.icon}</span>${escapeHtml(a.label)}</div>`).join('') || '<span class="text-on-surface-variant text-sm">Compete to earn badges</span>'}
       </div>
-      <div class="squads-card mt-4">${data.squads?.length ? data.squads.map(s =>
+      ${squads.length ? `<div class="squads-history-toolbar mt-4">
+        <label class="squads-history-select-all"><input type="checkbox" id="squadsHistorySelectAll"> Select all</label>
+        <button type="button" class="squads-btn squads-btn-ghost squads-btn-sm" id="squadsHistoryDeleteSelected" disabled>Delete selected</button>
+        <button type="button" class="squads-btn squads-btn-ghost squads-btn-sm squads-btn-danger-text" id="squadsHistoryClearAll">Clear all history</button>
+      </div>` : ''}
+      <div class="squads-card mt-4" id="squadsHistoryList">${squads.length ? squads.map(s =>
         `<div class="squads-history-row">
+          <label class="squads-history-check"><input type="checkbox" class="squads-history-cb" value="${escapeHtml(s.squadId)}"></label>
           <div class="squads-history-info">
             <span class="font-semibold">${escapeHtml(s.name)}</span>
             <code class="squads-id-text squads-id-inline">${escapeHtml(s.squadId)}</code>
           </div>
           <span class="text-sm text-on-surface-variant">#${s.rank || '—'} · ${s.points} pts${s.endedAt ? ` · ${formatDateTime(s.endedAt)}` : ''}</span>
           <button type="button" class="squads-btn squads-btn-primary squads-results-btn" data-id="${escapeHtml(s.squadId)}">View Results</button>
-        </div>`).join('') : emptyState('history', 'No past squads', 'Finished competitions appear here after they end.')}</div>`;
+        </div>`).join('') : emptyState('history', 'No past squads', 'Finished competitions appear here after they end.')}</div>
+      <div id="squadsHistoryMsg" class="mt-2"></div>`;
+
+      function updateHistoryDeleteState() {
+        const checked = content.querySelectorAll('.squads-history-cb:checked');
+        const delBtn = el('squadsHistoryDeleteSelected');
+        if (delBtn) delBtn.disabled = checked.length === 0;
+      }
+
+      content.querySelectorAll('.squads-history-cb').forEach(cb => {
+        cb.addEventListener('change', updateHistoryDeleteState);
+      });
+
+      el('squadsHistorySelectAll')?.addEventListener('change', (e) => {
+        const on = e.target.checked;
+        content.querySelectorAll('.squads-history-cb').forEach(cb => { cb.checked = on; });
+        updateHistoryDeleteState();
+      });
+
+      el('squadsHistoryDeleteSelected')?.addEventListener('click', async () => {
+        const ids = [...content.querySelectorAll('.squads-history-cb:checked')].map(cb => cb.value);
+        if (!ids.length) return;
+        if (!confirm(`Remove ${ids.length} squad(s) from your history?`)) return;
+        const msg = el('squadsHistoryMsg');
+        try {
+          const result = await window.SquadsAPI.deleteHistory({ squadIds: ids });
+          msg.innerHTML = `<span class="squads-success">Removed ${result.removed || ids.length} from history.</span>`;
+          renderHistoryTab(content);
+        } catch (err) {
+          msg.innerHTML = `<span class="squads-error">${escapeHtml(err.message)}</span>`;
+        }
+      });
+
+      el('squadsHistoryClearAll')?.addEventListener('click', async () => {
+        if (!confirm('Clear your entire squad history? Stats will reset. This only hides entries for you — it does not delete squad data for others.')) return;
+        const msg = el('squadsHistoryMsg');
+        try {
+          const result = await window.SquadsAPI.deleteHistory({ all: true });
+          msg.innerHTML = `<span class="squads-success">Cleared ${result.removed || 0} history entries.</span>`;
+          renderHistoryTab(content);
+        } catch (err) {
+          msg.innerHTML = `<span class="squads-error">${escapeHtml(err.message)}</span>`;
+        }
+      });
+
       content.querySelectorAll('.squads-results-btn').forEach(btn => {
         btn.addEventListener('click', () => openResults(btn.dataset.id));
       });
@@ -1061,13 +1220,15 @@
     }
   }
 
-  async function renderDetailTab(content, squadId) {
-    content.innerHTML = loadingSkeleton(5);
-    async function refresh() {
-      try {
-        const squad = await window.SquadsAPI.get(squadId);
+  async function renderDetailTab(content, squadId, options = {}) {
+    const soft = options.soft;
+    const force = options.force;
+    if (!soft) content.innerHTML = loadingSkeleton(5);
 
+    async function paint(forceRefresh = false) {
+      try {
         if (detailTab === 'rules') {
+          const { squad } = await fetchDetailData(squadId, { force: force || forceRefresh, needLeaderboard: false });
           content.innerHTML = `
             <div class="squads-detail-hero squads-detail-hero-compact">
               <div class="squads-detail-badges">
@@ -1084,27 +1245,32 @@
           return;
         }
 
-        let lb;
-        try {
-          lb = await window.SquadsAPI.leaderboard(squadId);
-        } catch (err) {
-          if (/ended|Competition ended/i.test(err?.message || '')) {
-            stopPolling();
-            openResults(squadId, { fromActive: true });
-            return;
-          }
-          throw err;
-        }
+        const { squad, lb } = await fetchDetailData(squadId, { force: force || forceRefresh, needLeaderboard: true });
+
         if (lb.status === 'ended') {
           stopPolling();
           openResults(squadId, { fromActive: true });
           return;
         }
-        const endMs = parseTs(squad.endTime);
-        const startMs = parseTs(squad.startTime);
-        const progress = timeProgressPercent(startMs, endMs);
+
+        const endMs = parseTs(squad.endTime || lb.endTime);
+        const startMs = parseTs(squad.startTime || lb.startTime);
+        const isScheduled = lb.status === 'scheduled';
+        const progress = isScheduled ? 0 : timeProgressPercent(startMs, endMs);
+        const isHost = lb.isHost || squad.isHost;
+        const hostUserId = lb.creatorId || squad.creatorId;
+        const members = lb.members || [];
         const goalsHtml = (squad.goals || []).map(g =>
           `<span class="squads-goal-chip">${escapeHtml(g.label || g.goalType)}</span>`).join('');
+
+        const hostActionsHtml = isHost && lb.status !== 'ended' ? `
+          <div class="squads-card squads-detail-panel squads-host-panel">
+            <div class="squads-detail-panel-label">Host Controls</div>
+            <p class="squads-detail-hint">As host you can remove members or cancel the entire squad before it ends.</p>
+            <div class="squads-btn-row">
+              <button type="button" class="squads-btn squads-btn-ghost squads-btn-danger-text" id="squadsCancelSquad">Cancel Squad</button>
+            </div>
+          </div>` : '';
 
         content.innerHTML = `
         <div class="squads-detail-hero">
@@ -1128,51 +1294,90 @@
 
         <div class="squads-detail-grid">
           <div class="squads-card squads-detail-panel">
-            <div class="squads-detail-panel-label">Time Remaining</div>
+            <div class="squads-detail-panel-label">${isScheduled ? 'Starts In' : 'Time Remaining'}</div>
             <div id="squadsCountdown"></div>
             <div class="squads-progress-bar mt-3"><div class="squads-progress-fill" style="width:${progress}%"></div></div>
-            <p class="squads-detail-time-meta">${progress}% of competition elapsed</p>
+            <p class="squads-detail-time-meta">${isScheduled ? 'Competition has not started — scores unlock at start time.' : `${progress}% of competition elapsed`}</p>
             <div class="squads-schedule-list">
               <div><span>Starts</span><strong>${formatDateTime(startMs)}</strong></div>
               <div><span>Ends</span><strong>${formatDateTime(endMs)}</strong></div>
             </div>
           </div>
           <div class="squads-card squads-detail-panel">
-            <div class="squads-detail-panel-label">Quick Actions</div>
+            <div class="squads-detail-panel-label">${isScheduled ? 'Before Start' : 'Quick Actions'}</div>
             <div class="squads-btn-row squads-detail-actions">
-              <button type="button" class="squads-btn squads-btn-primary" id="squadsManualSync">Sync Progress</button>
-              ${lb.status === 'ended' ? `<button type="button" class="squads-btn squads-btn-ghost" id="squadsViewResults">View Results</button>` : ''}
+              ${isScheduled
+                ? '<button type="button" class="squads-btn squads-btn-ghost" disabled>Sync available after start</button>'
+                : '<button type="button" class="squads-btn squads-btn-primary" id="squadsManualSync">Sync Progress</button>'}
             </div>
-            <p class="squads-detail-hint">Sync pulls your latest LeetCode solves and updates delta scores.</p>
+            <p class="squads-detail-hint">${isScheduled
+              ? 'Only solves during the competition window count toward E/M/H totals and points.'
+              : 'Sync pulls your latest LeetCode solves and updates delta scores.'}</p>
             <div id="squadsSyncMsg" class="mt-2"></div>
           </div>
         </div>
 
-        ${renderPositionCard(lb.positionCard)}
-        ${lb.podium?.length ? `<div class="squads-section-label">Top 3</div>${renderPodium(lb.podium)}` : ''}
-        ${renderLeaderboardTable(lb.entries, 'Live Leaderboard')}`;
+        ${isScheduled ? `<div class="squads-section-label">Onboarded Players (${members.length})</div>
+          <div class="squads-card squads-detail-panel">${renderMemberRoster(members, { isHost, hostUserId, showRemove: true })}</div>` : ''}
+
+        ${hostActionsHtml}
+
+        ${isScheduled ? '' : renderPositionCard(lb.positionCard)}
+        ${!isScheduled && lb.podium?.length ? `<div class="squads-section-label">Top 3</div>${renderPodium(lb.podium)}` : ''}
+        ${renderLeaderboardTable(lb.entries, isScheduled ? 'Registered Players (scores at start)' : 'Live Leaderboard')}`;
 
         wireCopyButtons(content);
         wireDetailTabs(content, squadId);
-        renderCountdown(endMs, 'squadsCountdown', () => openResults(squadId, { fromActive: true }));
+        wireHostActions(content, squadId, squad, lb);
+
+        if (isScheduled) {
+          renderCountdown(startMs, 'squadsCountdown', () => {
+            invalidateDetailCache();
+            paint(true);
+          }, { endedLabel: 'Starting…', endedStatus: 'active' });
+        } else {
+          renderCountdown(endMs, 'squadsCountdown', () => openResults(squadId, { fromActive: true }));
+        }
+
         el('squadsManualSync')?.addEventListener('click', async () => {
           const msg = el('squadsSyncMsg');
           try {
             await window.SquadsAPI.sync(squadId);
             msg.innerHTML = '<span class="squads-success">Synced!</span>';
-            refresh();
+            invalidateDetailCache();
+            paint(true);
           } catch (err) {
             msg.innerHTML = `<span class="squads-error">${escapeHtml(err.message)}</span>`;
           }
         });
         el('squadsViewResults')?.addEventListener('click', () => openResults(squadId));
       } catch (err) {
+        if (err?.code === 'CANCELLED' || /cancelled/i.test(err?.message || '')) {
+          content.innerHTML = `<div class="squads-error-card">
+            <span class="material-symbols-outlined">block</span>
+            <div><strong>Squad cancelled</strong><p class="text-sm mt-1">The host cancelled this competition.</p>
+            <button type="button" class="squads-btn squads-btn-primary mt-3" id="squadsBackFromCancelled">Back to Squads</button></div>
+          </div>`;
+          el('squadsBackFromCancelled')?.addEventListener('click', () => {
+            subView = null;
+            subViewId = null;
+            invalidateDetailCache();
+            renderHub(mount());
+          });
+          return;
+        }
+        if (/ended|Competition ended/i.test(err?.message || '')) {
+          stopPolling();
+          openResults(squadId, { fromActive: true });
+          return;
+        }
         showApiError(content, err);
       }
     }
-    await refresh();
+
+    await paint(force);
     if (detailTab === 'leaderboard') {
-      pollTimer = setInterval(refresh, 30000);
+      pollTimer = setInterval(() => paint(false), 30000);
     }
   }
 
@@ -1268,6 +1473,7 @@
   }
 
   function openDetail(squadId, options = {}) {
+    if (subViewId !== squadId) invalidateDetailCache();
     subView = 'detail';
     subViewId = squadId;
     detailTab = options.tab === 'rules' ? 'rules' : 'leaderboard';

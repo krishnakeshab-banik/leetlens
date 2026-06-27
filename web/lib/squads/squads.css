@@ -1362,3 +1362,106 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.squads-btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.squads-btn-danger-text {
+  color: #f85149 !important;
+  border-color: rgba(248, 81, 73, 0.35) !important;
+}
+
+.squads-btn-danger-text:hover {
+  background: rgba(248, 81, 73, 0.08) !important;
+}
+
+.squads-host-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(255, 161, 22, 0.15);
+  color: #ffa116;
+}
+
+.squads-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.squads-roster-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(63, 63, 70, 0.35);
+}
+
+.squads-roster-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.squads-roster-joined {
+  font-size: 11px;
+  color: #8b949e;
+}
+
+.squads-host-panel {
+  margin-top: 16px;
+}
+
+.squads-history-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(63, 63, 70, 0.35);
+}
+
+.squads-history-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #c9d1d9;
+  cursor: pointer;
+}
+
+.squads-history-check {
+  display: flex;
+  align-items: center;
+  margin-right: 4px;
+}
+
+.squads-history-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .squads-history-row {
+    grid-template-columns: auto 1fr;
+  }
+  .squads-history-row > .text-sm,
+  .squads-history-row > .squads-results-btn {
+    grid-column: 2;
+  }
+}
