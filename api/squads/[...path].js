@@ -20,8 +20,26 @@ const NAMED = new Set(['health', 'active', 'history', 'create', 'join', 'lookup'
 
 function parseSegments(req) {
   const raw = req.query.path;
-  if (!raw) return [];
-  return Array.isArray(raw) ? raw : [raw];
+  if (raw) {
+    return Array.isArray(raw) ? raw.filter(Boolean) : String(raw).split('/').filter(Boolean);
+  }
+
+  const urlPath = (req.url || '').split('?')[0].replace(/\/+$/, '') || '/';
+
+  // Full URL path: /api/squads/history
+  const apiPrefix = '/api/squads';
+  if (urlPath === apiPrefix) return [];
+  if (urlPath.startsWith(`${apiPrefix}/`)) {
+    return urlPath.slice(apiPrefix.length + 1).split('/').filter(Boolean);
+  }
+
+  // Vercel catch-all often passes mount-relative paths: /history, /:id/leaderboard
+  const relative = urlPath.replace(/^\/+/, '');
+  if (relative && !relative.startsWith('api/')) {
+    return relative.split('/').filter(Boolean);
+  }
+
+  return [];
 }
 
 function parseBody(req) {
