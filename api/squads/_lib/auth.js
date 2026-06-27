@@ -11,10 +11,16 @@ async function verifyRequest(req) {
     throw err;
   }
   try {
-    const decoded = await getAuth().verifyIdToken(match[1]);
+    const decoded = await getAuth().verifyIdToken(match[1], true);
     return decoded;
-  } catch (_) {
-    const err = new Error('Invalid or expired token');
+  } catch (e) {
+    if (e?.status && e.status >= 500) throw e;
+    const raw = e?.message || '';
+    let message = 'Invalid or expired token';
+    if (/incorrect "aud"/i.test(raw) || /project/i.test(raw)) {
+      message = 'Auth configuration mismatch on server (Firebase service account / project ID)';
+    }
+    const err = new Error(message);
     err.status = 401;
     throw err;
   }
@@ -26,7 +32,9 @@ function sendError(res, err) {
 }
 
 function cors(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') {

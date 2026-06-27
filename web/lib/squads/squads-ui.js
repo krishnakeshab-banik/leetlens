@@ -55,8 +55,23 @@
   }
 
   function showApiError(container, err) {
-    const isAuth = err?.code === 'AUTH_EXPIRED' || err?.code === 'AUTH_REQUIRED'
-      || /expired|sign in/i.test(err?.message || '');
+    const msg = err?.message || '';
+    const isServer = err?.code === 'SERVER_ERROR' || /Firebase Admin|Service account|MONGODB|not configured|configuration mismatch/i.test(msg);
+    const isAuth = !isServer && (
+      err?.code === 'AUTH_EXPIRED' || err?.code === 'AUTH_REQUIRED'
+      || /expired|sign in/i.test(msg)
+    );
+    if (isServer) {
+      container.innerHTML = `<div class="squads-error-card">
+        <span class="material-symbols-outlined">cloud_off</span>
+        <div>
+          <strong>Squads server unavailable</strong>
+          <p class="text-sm mt-1">${escapeHtml(msg || 'Server configuration error')}</p>
+          <p class="text-xs text-on-surface-variant mt-2">Production needs <code>FIREBASE_SERVICE_ACCOUNT</code> and <code>MONGODB_URI</code> set in Vercel environment variables.</p>
+        </div>
+      </div>`;
+      return;
+    }
     if (isAuth) {
       container.innerHTML = `<div class="squads-error-card">
         <span class="material-symbols-outlined">lock_clock</span>
@@ -1021,18 +1036,41 @@
   }
 
   async function renderHub(container) {
-    if (!requireAuth(container)) return;
+    if (!container) return;
+
+    try {
+      if (window.LeetLensCloud?.ensureAuthBoot) {
+        await window.LeetLensCloud.ensureAuthBoot();
+      }
+    } catch (_) {}
+
+    if (!window.LeetLensCloud?.getCloudState()?.user) {
+      if (!requireAuth(container)) return;
+    }
+
+    const preContent = el('squadsTabContent');
+    if (preContent) preContent.innerHTML = loadingSkeleton(3);
+    else if (!container.querySelector('.squads-page')) container.innerHTML = loadingSkeleton(3);
+
+    try {
+      await window.LeetLensCloud?.getAuthToken?.(false);
+    } catch (err) {
+      const errTarget = el('squadsTabContent') || container;
+      showApiError(errTarget, { code: 'AUTH_REQUIRED', message: err?.message || 'Sign in to use Squads' });
+      return;
+    }
+
     renderHubShell(container);
-    const content = el('squadsTabContent');
-    if (!content) return;
+    const tabContent = el('squadsTabContent');
+    if (!tabContent) return;
 
-    if (subView === 'detail' && subViewId) return renderDetailTab(content, subViewId);
-    if (subView === 'results' && subViewId) return renderResultsTab(content, subViewId);
+    if (subView === 'detail' && subViewId) return renderDetailTab(tabContent, subViewId);
+    if (subView === 'results' && subViewId) return renderResultsTab(tabContent, subViewId);
 
-    if (currentTab === 'create') return renderCreateTab(content);
-    if (currentTab === 'join') return renderJoinTab(content);
-    if (currentTab === 'active') return renderActiveTab(content);
-    if (currentTab === 'history') return renderHistoryTab(content);
+    if (currentTab === 'create') return renderCreateTab(tabContent);
+    if (currentTab === 'join') return renderJoinTab(tabContent);
+    if (currentTab === 'active') return renderActiveTab(tabContent);
+    if (currentTab === 'history') return renderHistoryTab(tabContent);
   }
 
   function openDetail(squadId) {
