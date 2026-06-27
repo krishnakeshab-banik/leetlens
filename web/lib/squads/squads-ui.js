@@ -336,6 +336,22 @@
     detailCache = { squadId: null, squad: null, lb: null, fetchedAt: 0 };
   }
 
+  function currentUserId() {
+    return window.LeetLensCloud?.getCloudState()?.user?.uid || '';
+  }
+
+  function resolveIsHost(squad, lb) {
+    const uid = currentUserId();
+    const creatorId = lb?.creatorId || squad?.creatorId || '';
+    if (lb?.isHost === true || squad?.isHost === true) return true;
+    if (lb?.isHost === false && squad?.isHost === false) return false;
+    return !!(uid && creatorId && uid === creatorId);
+  }
+
+  function resolveHostUserId(squad, lb) {
+    return lb?.creatorId || squad?.creatorId || currentUserId();
+  }
+
   function timeProgressPercent(startMs, endMs) {
     const now = Date.now();
     if (!startMs || !endMs || endMs <= startMs) return 0;
@@ -1257,20 +1273,33 @@
         const startMs = parseTs(squad.startTime || lb.startTime);
         const isScheduled = lb.status === 'scheduled';
         const progress = isScheduled ? 0 : timeProgressPercent(startMs, endMs);
-        const isHost = lb.isHost || squad.isHost;
-        const hostUserId = lb.creatorId || squad.creatorId;
-        const members = lb.members || [];
+        const isHost = resolveIsHost(squad, lb);
+        const hostUserId = resolveHostUserId(squad, lb);
+        let members = lb.members || [];
+        if (!members.length && lb.entries?.length) {
+          members = lb.entries.map(e => ({
+            userId: e.userId,
+            displayLabel: e.displayLabel,
+            displayName: e.displayName,
+            squadNickname: e.squadNickname,
+            role: e.userId === hostUserId ? 'creator' : 'member'
+          }));
+        }
         const goalsHtml = (squad.goals || []).map(g =>
           `<span class="squads-goal-chip">${escapeHtml(g.label || g.goalType)}</span>`).join('');
 
-        const hostActionsHtml = isHost && lb.status !== 'ended' ? `
+        const hostControlsHtml = isHost ? `
           <div class="squads-card squads-detail-panel squads-host-panel">
             <div class="squads-detail-panel-label">Host Controls</div>
-            <p class="squads-detail-hint">As host you can remove members or cancel the entire squad before it ends.</p>
+            <p class="squads-detail-hint">Remove members or cancel the squad before it ends.</p>
             <div class="squads-btn-row">
               <button type="button" class="squads-btn squads-btn-ghost squads-btn-danger-text" id="squadsCancelSquad">Cancel Squad</button>
             </div>
           </div>` : '';
+
+        const membersSectionHtml = members.length && (isScheduled || isHost) ? `
+          <div class="squads-section-label">${isScheduled ? 'Onboarded Players' : 'Squad Members'} (${members.length})</div>
+          <div class="squads-card squads-detail-panel">${renderMemberRoster(members, { isHost, hostUserId, showRemove: isHost })}</div>` : '';
 
         content.innerHTML = `
         <div class="squads-detail-hero">
@@ -1283,7 +1312,7 @@
               </div>
               <h2 class="squads-detail-title">${escapeHtml(squad.name)}</h2>
               ${squad.description ? `<p class="squads-detail-desc">${escapeHtml(squad.description)}</p>` : ''}
-              <p class="squads-detail-sub">Hosted by ${escapeHtml(squad.creatorDisplayName)} · ${squad.memberCount}/${squad.maxMembers} members</p>
+              <p class="squads-detail-sub">Hosted by ${escapeHtml(squad.creatorDisplayName)} · ${squad.memberCount}/${squad.maxMembers} members${isHost ? ' · <span class="squads-host-badge">You are the host</span>' : ''}</p>
               ${goalsHtml ? `<div class="squads-goal-chips squads-detail-goals">${goalsHtml}</div>` : ''}
             </div>
           </div>
@@ -1317,10 +1346,9 @@
           </div>
         </div>
 
-        ${isScheduled ? `<div class="squads-section-label">Onboarded Players (${members.length})</div>
-          <div class="squads-card squads-detail-panel">${renderMemberRoster(members, { isHost, hostUserId, showRemove: true })}</div>` : ''}
+        ${membersSectionHtml}
 
-        ${hostActionsHtml}
+        ${hostControlsHtml}
 
         ${isScheduled ? '' : renderPositionCard(lb.positionCard)}
         ${!isScheduled && lb.podium?.length ? `<div class="squads-section-label">Top 3</div>${renderPodium(lb.podium)}` : ''}
