@@ -28,6 +28,9 @@ let currentSortDirection = 'desc';
 let currentView = 'overview';
 
 function getJoinCodeFromUrl() {
+  if (window.LeetLensSquadsJoin?.getJoinCodeFromUrl) {
+    return window.LeetLensSquadsJoin.getJoinCodeFromUrl();
+  }
   const fromQuery = new URLSearchParams(window.location.search).get('joinCode');
   if (fromQuery) return fromQuery.trim().toUpperCase();
   const match = window.location.pathname.match(/\/squads\/join\/([^/?#]+)/i);
@@ -124,11 +127,13 @@ function switchView(viewId) {
   }
   if (viewId === 'squads') {
     if (window.LeetLensSquads) {
-      const joinCode = sessionStorage.getItem('squadsJoinCode') || getJoinCodeFromUrl();
+      const joinCode = window.LeetLensSquadsJoin?.readStoredJoinCode?.()
+        || sessionStorage.getItem('squadsJoinCode')
+        || getJoinCodeFromUrl();
       const params = joinCode
         ? { code: joinCode, tab: 'join', autoJoin: true }
         : undefined;
-      if (joinCode) sessionStorage.removeItem('squadsJoinCode');
+      if (joinCode) window.LeetLensSquadsJoin?.rememberJoinCode?.(joinCode);
       window.LeetLensSquads.render('squads', params);
     }
   } else if (window.LeetLensSquads?.stopPolling) {
@@ -1175,7 +1180,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const joinCode = getJoinCodeFromUrl();
     if (joinCode) {
-      try { sessionStorage.setItem('squadsJoinCode', joinCode); } catch (_) {}
+      window.LeetLensSquadsJoin?.rememberJoinCode?.(joinCode);
       switchView('squads');
       return;
     }

@@ -1,10 +1,12 @@
 {
   "buildCommand": "npm run build && npm run build:css && npm run prepare:web",
   "outputDirectory": "web",
+  "redirects": [
+    { "source": "/squads/join/:code", "destination": "/dashboard?joinCode=:code", "permanent": false }
+  ],
   "rewrites": [
     { "source": "/", "destination": "/index.html" },
-    { "source": "/dashboard", "destination": "/dashboard.html" },
-    { "source": "/squads/join/:code", "destination": "/dashboard.html" }
+    { "source": "/dashboard", "destination": "/dashboard.html" }
   ],
   "headers": [
     {

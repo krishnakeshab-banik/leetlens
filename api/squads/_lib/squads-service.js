@@ -49,7 +49,6 @@ function computeSchedule(body) {
 
 function inviteBaseUrl() {
   if (process.env.PUBLIC_SITE_URL) return process.env.PUBLIC_SITE_URL.replace(/\/$/, '');
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   return 'https://leetlens.srminsider.in';
 }
 

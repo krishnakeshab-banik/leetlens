@@ -34,8 +34,16 @@
     return el('view-squads');
   }
 
+  const DEFAULT_SITE_URL = 'https://leetlens.srminsider.in';
+
+  function inviteBaseOrigin() {
+    const configured = window.__LEETLENS_SITE_URL__;
+    if (configured) return String(configured).replace(/\/$/, '');
+    return DEFAULT_SITE_URL;
+  }
+
   function inviteUrl(code) {
-    return `${window.location.origin}/squads/join/${code}`;
+    return `${inviteBaseOrigin()}/squads/join/${String(code || '').trim().toUpperCase()}`;
   }
 
   function loadingSkeleton(lines = 3) {
@@ -171,6 +179,14 @@
     </div>`;
   }
 
+  function readInviteCode() {
+    return presetJoinCode
+      || window.LeetLensSquadsJoin?.readStoredJoinCode?.()
+      || window.LeetLensSquadsJoin?.getJoinCodeFromUrl?.()
+      || new URLSearchParams(window.location.search).get('joinCode')
+      || '';
+  }
+
   function autoJoinStorageKey(code) {
     return `squads_auto_join_${String(code || '').toUpperCase()}`;
   }
@@ -272,6 +288,7 @@
         squadNickname: defaultName || null
       });
       try { sessionStorage.setItem(autoJoinStorageKey(normalized), 'done'); } catch (_) {}
+      window.LeetLensSquadsJoin?.clearPendingJoin?.();
       presetJoinCode = '';
       return squad;
     } catch (err) {
@@ -692,17 +709,21 @@
   async function renderJoinTab(content) {
     const profile = window.LeetLensCloud?.getCloudState()?.profile;
     const defaultName = profile?.displayName || window.LeetLensCloud?.getCloudState()?.user?.displayName || '';
-    const inviteCode = presetJoinCode || new URLSearchParams(window.location.search).get('joinCode') || '';
+    const inviteCode = readInviteCode();
     let autoJoinError = '';
 
     if (inviteCode && !window.LeetLensCloud?.getCloudState()?.user) {
+      window.LeetLensSquadsJoin?.rememberJoinCode?.(String(inviteCode).trim().toUpperCase());
       content.innerHTML = `<div class="squads-card squads-signin-prompt">
         <span class="material-symbols-outlined text-4xl text-primary">group_add</span>
         <h3 class="font-semibold mt-3">Join Squad ${escapeHtml(inviteCode.toUpperCase())}</h3>
         <p class="text-sm text-on-surface-variant mt-2">Sign in to join this squad automatically.</p>
         <button type="button" class="squads-btn squads-btn-primary mt-4" id="squadsInviteSignIn">Sign In to Join</button>
       </div>`;
-      el('squadsInviteSignIn')?.addEventListener('click', () => window.switchView?.('signin'));
+      el('squadsInviteSignIn')?.addEventListener('click', () => {
+        window.LeetLensSquadsJoin?.rememberJoinCode?.(String(inviteCode).trim().toUpperCase());
+        window.switchView?.('signin');
+      });
       return;
     }
 

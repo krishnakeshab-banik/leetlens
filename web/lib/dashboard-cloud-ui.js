@@ -832,6 +832,10 @@
     await cloud().ensureAuthBoot?.() || cloud().initCloud();
     cloud().onCloudStateChange(state => {
       renderAll(state);
+      if (state.user && !state.loading && window.LeetLensSquadsJoin?.hasPendingJoin?.()) {
+        window.LeetLensSquadsJoin.openSquadsJoinFlow();
+        return;
+      }
       if (state.user && !state.loading && shouldNavigateAfterSignIn()) {
         try { sessionStorage.removeItem('leetlensPendingAuthRedirect'); } catch (_) {}
         window.switchView?.('profile');
@@ -844,8 +848,10 @@
     await cloud().syncLocalRecords(records);
 
     const hash = window.location.hash.replace('#', '');
-    const validViews = ['overview', 'problems', 'revise', 'signin', 'profile', 'striver', 'plan', 'analytics', 'github'];
-    if (validViews.includes(hash)) {
+    const validViews = ['overview', 'problems', 'revise', 'signin', 'profile', 'striver', 'plan', 'analytics', 'github', 'squads'];
+    if (window.LeetLensSquadsJoin?.hasPendingJoin?.()) {
+      window.LeetLensSquadsJoin.openSquadsJoinFlow();
+    } else if (validViews.includes(hash)) {
       window.switchView?.(hash);
     }
   }

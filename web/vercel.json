@@ -1,0 +1,19 @@
+{
+  "redirects": [
+    {
+      "source": "/squads/join/:code",
+      "destination": "/dashboard?joinCode=:code",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/dashboard",
+      "destination": "/dashboard.html"
+    }
+  ]
+}

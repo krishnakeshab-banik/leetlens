@@ -56,7 +56,7 @@ function copyRecursive(src, dest) {
 function patchDashboardHtml(content) {
   const webBoot = [
     '  <script src="chrome-shim.js"></script>',
-    '  <script>window.__LEETLENS_WEB__ = true;</script>'
+    `  <script>window.__LEETLENS_WEB__ = true; window.__LEETLENS_SITE_URL__ = '${SITE_URL}';</script>`
   ].join('\n') + '\n';
 
   if (!content.includes('chrome-shim.js')) {
@@ -64,7 +64,12 @@ function patchDashboardHtml(content) {
   } else if (!content.includes('__LEETLENS_WEB__')) {
     content = content.replace(
       /(<script src="chrome-shim\.js"><\/script>\s*)/,
-      `$1  <script>window.__LEETLENS_WEB__ = true;</script>\n`
+      `$1  <script>window.__LEETLENS_WEB__ = true; window.__LEETLENS_SITE_URL__ = '${SITE_URL}';</script>\n`
+    );
+  } else if (!content.includes('__LEETLENS_SITE_URL__')) {
+    content = content.replace(
+      /window\.__LEETLENS_WEB__\s*=\s*true;/,
+      `window.__LEETLENS_WEB__ = true; window.__LEETLENS_SITE_URL__ = '${SITE_URL}';`
     );
   }
   if (!content.includes('_vercel/insights/script.js')) {
@@ -254,6 +259,15 @@ function main() {
   writeIndexHtml();
   writeRobotsTxt();
   writeSitemapXml();
+  fs.writeFileSync(path.join(webDir, 'vercel.json'), JSON.stringify({
+    redirects: [
+      { source: '/squads/join/:code', destination: '/dashboard?joinCode=:code', permanent: false }
+    ],
+    rewrites: [
+      { source: '/', destination: '/index.html' },
+      { source: '/dashboard', destination: '/dashboard.html' }
+    ]
+  }, null, 2));
 
   const missing = REQUIRED_LIB_FILES.filter(name => !fs.existsSync(path.join(webDir, 'lib', name)));
   if (missing.length) {
