@@ -8,6 +8,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/squads/:path*",
+      "destination": "/api/squads?segments=:path*"
+    },
+    {
       "source": "/",
       "destination": "/index.html"
     },

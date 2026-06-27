@@ -1,6 +1,6 @@
 'use strict';
 
-const { cors, verifyRequest, sendError } = require('./_lib/auth');
+const { cors, verifyRequest, sendError } = require('../lib/squads-server/auth');
 const {
   createSquad,
   joinSquad,
@@ -14,26 +14,25 @@ const {
   deleteHistoryEntries,
   cancelSquad,
   removeMember
-} = require('./_lib/squads-service');
+} = require('../lib/squads-server/squads-service');
 
 const NAMED = new Set(['health', 'active', 'history', 'create', 'join', 'lookup']);
 
 function parseSegments(req) {
-  const raw = req.query.path;
-  if (raw) {
-    return Array.isArray(raw) ? raw.filter(Boolean) : String(raw).split('/').filter(Boolean);
+  for (const key of ['segments', 'path']) {
+    const raw = req.query[key];
+    if (raw == null || raw === '') continue;
+    if (Array.isArray(raw)) return raw.filter(Boolean);
+    return String(raw).split('/').filter(Boolean);
   }
 
   const urlPath = (req.url || '').split('?')[0].replace(/\/+$/, '') || '/';
-
-  // Full URL path: /api/squads/history
   const apiPrefix = '/api/squads';
   if (urlPath === apiPrefix) return [];
   if (urlPath.startsWith(`${apiPrefix}/`)) {
     return urlPath.slice(apiPrefix.length + 1).split('/').filter(Boolean);
   }
 
-  // Vercel catch-all often passes mount-relative paths: /history, /:id/leaderboard
   const relative = urlPath.replace(/^\/+/, '');
   if (relative && !relative.startsWith('api/')) {
     return relative.split('/').filter(Boolean);
@@ -53,7 +52,7 @@ async function handleHealth(req, res) {
   const checks = { firebaseAdmin: false, mongodb: false };
 
   try {
-    const { getAuth } = require('./_lib/firebase-admin');
+    const { getAuth } = require('../lib/squads-server/firebase-admin');
     getAuth();
     checks.firebaseAdmin = true;
   } catch (err) {
@@ -65,7 +64,7 @@ async function handleHealth(req, res) {
   }
 
   try {
-    const { connectMongo } = require('./_lib/mongodb');
+    const { connectMongo } = require('../lib/squads-server/mongodb');
     const db = await connectMongo();
     await db.command({ ping: 1 });
     checks.mongodb = true;

@@ -41,12 +41,15 @@ const REQUIRED_LIB_FILES = [
   'dashboard-enhanced.css'
 ];
 
-function copyRecursive(src, dest) {
+function copyRecursive(src, dest, skipNames = []) {
   if (!fs.existsSync(src)) return;
   const stat = fs.statSync(src);
   if (stat.isDirectory()) {
     fs.mkdirSync(dest, { recursive: true });
-    fs.readdirSync(src).forEach(name => copyRecursive(path.join(src, name), path.join(dest, name)));
+    fs.readdirSync(src).forEach(name => {
+      if (skipNames.includes(name)) return;
+      copyRecursive(path.join(src, name), path.join(dest, name), skipNames);
+    });
   } else {
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(src, dest);
@@ -248,7 +251,10 @@ function main() {
     fs.copyFileSync(shimSrc, path.join(webDir, 'chrome-shim.js'));
   }
 
-  COPY_DIRS.forEach(dir => copyRecursive(path.join(root, dir), path.join(webDir, dir)));
+  COPY_DIRS.forEach(dir => {
+    const skip = dir === 'lib' ? ['squads-server'] : [];
+    copyRecursive(path.join(root, dir), path.join(webDir, dir), skip);
+  });
 
   const webBundleSrc = path.join(root, 'lib', 'dashboard-bundle-web.js');
   if (fs.existsSync(webBundleSrc)) {
@@ -276,6 +282,7 @@ function main() {
       { source: '/squads/join/:code', destination: '/dashboard?joinCode=:code', permanent: false }
     ],
     rewrites: [
+      { source: '/api/squads/:path*', destination: '/api/squads?segments=:path*' },
       { source: '/', destination: '/index.html' },
       { source: '/dashboard', destination: '/dashboard.html' }
     ],

@@ -5,6 +5,7 @@
     { "source": "/squads/join/:code", "destination": "/dashboard?joinCode=:code", "permanent": false }
   ],
   "rewrites": [
+    { "source": "/api/squads/:path*", "destination": "/api/squads?segments=:path*" },
     { "source": "/", "destination": "/index.html" },
     { "source": "/dashboard", "destination": "/dashboard.html" }
   ],
