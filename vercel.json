@@ -4,7 +4,7 @@
   "rewrites": [
     { "source": "/", "destination": "/index.html" },
     { "source": "/dashboard", "destination": "/dashboard.html" },
-    { "source": "/squads/join/:code", "destination": "/dashboard?joinCode=:code#squads-join" }
+    { "source": "/squads/join/:code", "destination": "/dashboard.html" }
   ],
   "headers": [
     {

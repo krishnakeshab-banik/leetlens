@@ -27,7 +27,13 @@ let currentSortField = 'lastSeen';
 let currentSortDirection = 'desc';
 let currentView = 'overview';
 
-// ── view routing ───────────────────────────────────────────────────────────
+function getJoinCodeFromUrl() {
+  const fromQuery = new URLSearchParams(window.location.search).get('joinCode');
+  if (fromQuery) return fromQuery.trim().toUpperCase();
+  const match = window.location.pathname.match(/\/squads\/join\/([^/?#]+)/i);
+  if (match) return decodeURIComponent(match[1]).trim().toUpperCase();
+  return null;
+}
 const VIEW_TITLES = {
   overview: 'Analytics Dashboard',
   problems: 'All Problems',
@@ -118,8 +124,7 @@ function switchView(viewId) {
   }
   if (viewId === 'squads') {
     if (window.LeetLensSquads) {
-      const joinCode = sessionStorage.getItem('squadsJoinCode')
-        || new URLSearchParams(window.location.search).get('joinCode');
+      const joinCode = sessionStorage.getItem('squadsJoinCode') || getJoinCodeFromUrl();
       const params = joinCode
         ? { code: joinCode, tab: 'join', autoJoin: true }
         : undefined;
@@ -1168,9 +1173,9 @@ document.addEventListener('DOMContentLoaded', () => {
         await window.LeetLensCloud.ensureAuthBoot();
       } catch (_) {}
     }
-    const joinCode = new URLSearchParams(window.location.search).get('joinCode');
+    const joinCode = getJoinCodeFromUrl();
     if (joinCode) {
-      try { sessionStorage.setItem('squadsJoinCode', joinCode.toUpperCase()); } catch (_) {}
+      try { sessionStorage.setItem('squadsJoinCode', joinCode); } catch (_) {}
       switchView('squads');
       return;
     }
