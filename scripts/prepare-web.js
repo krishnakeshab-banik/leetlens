@@ -53,7 +53,19 @@ function copyRecursive(src, dest) {
   }
 }
 
+function buildAssetVersion() {
+  return process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 12)
+    || process.env.VERCEL_GIT_COMMIT_REF
+    || Date.now().toString(36);
+}
+
 function patchDashboardHtml(content) {
+  const assetVersion = buildAssetVersion();
+  content = content.replace(
+    /lib\/squads\/(squads(?:-api|-ui)?\.(?:js|css))(\?v=[^"']+)?/g,
+    `lib/squads/$1?v=${assetVersion}`
+  );
+
   const webBoot = [
     '  <script src="chrome-shim.js"></script>',
     `  <script>window.__LEETLENS_WEB__ = true; window.__LEETLENS_SITE_URL__ = '${SITE_URL}';</script>`
@@ -266,6 +278,14 @@ function main() {
     rewrites: [
       { source: '/', destination: '/index.html' },
       { source: '/dashboard', destination: '/dashboard.html' }
+    ],
+    headers: [
+      {
+        source: '/lib/squads/(.*)',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }
+        ]
+      }
     ]
   }, null, 2));
 

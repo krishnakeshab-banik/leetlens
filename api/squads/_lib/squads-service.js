@@ -4,7 +4,7 @@ const { ObjectId } = require('mongodb');
 const { connectMongo } = require('./mongodb');
 const { generateSquadCode } = require('./codes');
 const { computeDeltas, computePoints, rankEntries, squadStatus, pickDeltas, toMs } = require('./scoring');
-const { sanitizeSquad, sanitizeLeaderboardEntry, publicDisplayName } = require('./sanitize');
+const { sanitizeSquad, sanitizeMember, sanitizeLeaderboardEntry, publicDisplayName } = require('./sanitize');
 const { fetchUserProgress } = require('./leetcode-sync');
 
 function parseTime(dateStr, timeStr) {
@@ -312,7 +312,14 @@ async function getSquadDetails(squadId, uid) {
   const status = squadStatus(squad);
   return sanitizeSquad(
     { id: String(squad._id), ...squad },
-    { memberCount: squad.memberCount || 0, status, isMember: true }
+    {
+      memberCount: squad.memberCount || 0,
+      status,
+      isMember: true,
+      creatorId: squad.creatorId,
+      isHost: squad.creatorId === uid,
+      myRole: member.role || 'member'
+    }
   );
 }
 
@@ -323,14 +330,25 @@ async function getLeaderboard(squadId, uid) {
   if (!member) throw Object.assign(new Error('Not a squad member'), { status: 403 });
 
   const squad = await db.collection('squads').findOne({ _id: new ObjectId(sid) });
-  const status = squadStatus(squad || {});
+  if (!squad) throw Object.assign(new Error('Squad not found'), { status: 404 });
+  if (squad.status === 'cancelled') {
+    throw Object.assign(new Error('Competition was cancelled'), { status: 410 });
+  }
+
+  const status = squadStatus(squad);
+  const members = await db.collection('squadMembers').find({ squadId: sid }).sort({ joinedAt: 1 }).toArray();
+  const memberList = members.map(m => sanitizeMember(m));
+  const isHost = squad.creatorId === uid;
 
   if (status === 'ended') {
     await finalizeSquad(sid, uid);
-  } else {
+  } else if (status === 'active') {
     try {
       await smartSyncIfStale(squadId, uid);
     } catch (_) {}
+    if (!squad.baselinesLockedAtStart) {
+      await ensureCompetitionBaselines(db, squad);
+    }
   }
 
   await recomputeRanks(db, sid);
@@ -339,7 +357,7 @@ async function getLeaderboard(squadId, uid) {
 
   const you = entries.find(e => e.isYou);
   const nextRank = entries.find(e => e.rank === (you?.rank || 0) - 1);
-  const positionCard = you ? {
+  const positionCard = you && status === 'active' ? {
     rank: you.rank,
     points: you.points,
     totalDelta: you.totalDelta,
@@ -350,9 +368,14 @@ async function getLeaderboard(squadId, uid) {
   return {
     squadId: sid,
     status,
-    scoringMode: squad?.scoringMode || 'weighted',
+    scoringMode: squad.scoringMode || 'weighted',
+    startTime: squad.startTime,
+    endTime: squad.endTime,
+    isHost,
+    creatorId: squad.creatorId,
+    members: memberList,
     entries,
-    podium: entries.filter(e => e.rank <= 3),
+    podium: status === 'active' ? entries.filter(e => e.rank <= 3) : [],
     positionCard,
     updatedAt: Date.now()
   };
@@ -366,6 +389,9 @@ async function syncParticipant(squadId, uid, force = false, options = {}) {
   if (!squad) throw Object.assign(new Error('Squad not found'), { status: 404 });
 
   const status = squadStatus(squad);
+  if (status === 'scheduled') {
+    throw Object.assign(new Error('Competition has not started yet'), { status: 400 });
+  }
   if (status === 'ended' && !allowEnded) {
     throw Object.assign(new Error('Competition ended'), { status: 400 });
   }
@@ -375,10 +401,10 @@ async function syncParticipant(squadId, uid, force = false, options = {}) {
 
   const lb = await db.collection('squadLeaderboard').findOne({ squadId: sid, userId: uid });
   const lastMs = lb?.lastUpdatedAt instanceof Date ? lb.lastUpdatedAt.getTime() : 0;
-  const cooldownMs = 15 * 60 * 1000;
+  const cooldownMs = 60 * 1000;
   if (!force && !allowEnded && lastMs && Date.now() - lastMs < cooldownMs) {
-    const waitMin = Math.ceil((cooldownMs - (Date.now() - lastMs)) / 60000);
-    throw Object.assign(new Error(`Sync available in ${waitMin} min`), { status: 429 });
+    const waitSec = Math.ceil((cooldownMs - (Date.now() - lastMs)) / 1000);
+    throw Object.assign(new Error(`Sync available in ${waitSec}s`), { status: 429 });
   }
 
   const baseline = await db.collection('squadBaselines').findOne({ squadId: sid, userId: uid });
@@ -401,7 +427,7 @@ async function smartSyncIfStale(squadId, uid) {
 
   const lb = await db.collection('squadLeaderboard').findOne({ squadId: sid, userId: uid });
   const lastMs = lb?.lastUpdatedAt instanceof Date ? lb.lastUpdatedAt.getTime() : 0;
-  if (!lastMs || Date.now() - lastMs > 30 * 60 * 1000) {
+  if (!lastMs || Date.now() - lastMs > 5 * 60 * 1000) {
     try {
       await syncParticipant(squadId, uid, true);
     } catch (err) {
@@ -426,6 +452,7 @@ async function listActive(uid) {
       continue;
     }
     if (!squad) continue;
+    if (squad.status === 'cancelled') continue;
 
     const status = squadStatus(squad);
     if (status === 'ended') {
@@ -469,7 +496,11 @@ async function listHistory(uid) {
     } catch (_) {}
   }
 
-  const entries = await db.collection('userSquads').find({ userId: uid, status: 'ended' }).toArray();
+  const entries = await db.collection('userSquads').find({
+    userId: uid,
+    status: 'ended',
+    hiddenFromHistory: { $ne: true }
+  }).toArray();
   const items = [];
   let wins = 0;
   let runnerUps = 0;
@@ -781,6 +812,82 @@ async function syncAllActiveMembers() {
   return count;
 }
 
+async function removeMember(squadId, hostUid, targetUserId) {
+  const db = await connectMongo();
+  const sid = String(squadId);
+  const targetId = String(targetUserId || '').trim();
+  if (!targetId) throw Object.assign(new Error('Member id required'), { status: 400 });
+
+  const squad = await db.collection('squads').findOne({ _id: new ObjectId(sid) });
+  if (!squad) throw Object.assign(new Error('Squad not found'), { status: 404 });
+  if (squad.creatorId !== hostUid) throw Object.assign(new Error('Only the host can remove members'), { status: 403 });
+  if (targetId === hostUid) throw Object.assign(new Error('Host cannot remove themselves — cancel the squad instead'), { status: 400 });
+
+  const status = squadStatus(squad);
+  if (status === 'ended' || squad.status === 'cancelled') {
+    throw Object.assign(new Error('Competition is no longer active'), { status: 400 });
+  }
+
+  const target = await db.collection('squadMembers').findOne({ squadId: sid, userId: targetId });
+  if (!target) throw Object.assign(new Error('Member not found in this squad'), { status: 404 });
+
+  await Promise.all([
+    db.collection('squadMembers').deleteOne({ squadId: sid, userId: targetId }),
+    db.collection('squadLeaderboard').deleteOne({ squadId: sid, userId: targetId }),
+    db.collection('squadBaselines').deleteOne({ squadId: sid, userId: targetId }),
+    db.collection('userSquads').deleteOne({ squadId: sid, userId: targetId }),
+    db.collection('squads').updateOne({ _id: squad._id }, { $inc: { memberCount: -1 } })
+  ]);
+
+  await recomputeRanks(db, sid);
+  return { ok: true, removedUserId: targetId };
+}
+
+async function cancelSquad(squadId, hostUid) {
+  const db = await connectMongo();
+  const sid = String(squadId);
+  const squad = await db.collection('squads').findOne({ _id: new ObjectId(sid) });
+  if (!squad) throw Object.assign(new Error('Squad not found'), { status: 404 });
+  if (squad.creatorId !== hostUid) throw Object.assign(new Error('Only the host can cancel this squad'), { status: 403 });
+
+  const status = squadStatus(squad);
+  if (status === 'ended' || squad.status === 'cancelled') {
+    throw Object.assign(new Error('Competition is already finished or cancelled'), { status: 400 });
+  }
+
+  const now = new Date();
+  await db.collection('squads').updateOne(
+    { _id: squad._id },
+    { $set: { status: 'cancelled', cancelledAt: now, cancelledBy: hostUid } }
+  );
+  await db.collection('userSquads').updateMany(
+    { squadId: sid },
+    { $set: { status: 'ended', endedReason: 'cancelled' } }
+  );
+
+  return { ok: true, cancelledAt: now.getTime() };
+}
+
+async function deleteHistoryEntries(uid, { squadIds = [], all = false } = {}) {
+  const db = await connectMongo();
+  const filter = { userId: uid, status: 'ended', hiddenFromHistory: { $ne: true } };
+  if (all) {
+    const result = await db.collection('userSquads').updateMany(filter, {
+      $set: { hiddenFromHistory: true, hiddenAt: new Date() }
+    });
+    return { ok: true, removed: result.modifiedCount };
+  }
+
+  const ids = [...new Set((squadIds || []).map(String).filter(Boolean))];
+  if (!ids.length) throw Object.assign(new Error('Select at least one squad to remove'), { status: 400 });
+
+  filter.squadId = { $in: ids };
+  const result = await db.collection('userSquads').updateMany(filter, {
+    $set: { hiddenFromHistory: true, hiddenAt: new Date() }
+  });
+  return { ok: true, removed: result.modifiedCount };
+}
+
 module.exports = {
   createSquad,
   joinSquad,
@@ -794,5 +901,8 @@ module.exports = {
   getResults,
   finalizeSquad,
   syncAllActiveMembers,
+  removeMember,
+  cancelSquad,
+  deleteHistoryEntries,
   squadStatus
 };

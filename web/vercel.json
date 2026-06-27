@@ -15,5 +15,16 @@
       "source": "/dashboard",
       "destination": "/dashboard.html"
     }
+  ],
+  "headers": [
+    {
+      "source": "/lib/squads/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    }
   ]
 }

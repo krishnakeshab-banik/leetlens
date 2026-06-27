@@ -174,6 +174,92 @@ function githubContributions(profile) {
 
 
 
+const LC_DIFFICULTY_QUERY = `
+
+  query questionDifficulty($titleSlug: String!) {
+
+    question(titleSlug: $titleSlug) {
+
+      difficulty
+
+    }
+
+  }
+
+`;
+
+
+
+async function fetchProblemDifficulty(titleSlug) {
+
+  if (!titleSlug) return 'Unknown';
+
+  try {
+
+    const res = await fetch('https://leetcode.com/graphql', {
+
+      method: 'POST',
+
+      headers: { 'Content-Type': 'application/json' },
+
+      body: JSON.stringify({
+
+        query: LC_DIFFICULTY_QUERY,
+
+        variables: { titleSlug }
+
+      })
+
+    });
+
+    if (!res.ok) return 'Unknown';
+
+    const json = await res.json();
+
+    return json?.data?.question?.difficulty || 'Unknown';
+
+  } catch (_) {
+
+    return 'Unknown';
+
+  }
+
+}
+
+
+
+async function enrichDifficulties(problems, concurrency = 8, maxEnrich = 150) {
+
+  const toEnrich = (problems || []).filter(p => {
+
+    const d = String(p.difficulty || '');
+
+    return !d || d === 'Unknown';
+
+  }).slice(0, maxEnrich);
+
+
+
+  for (let i = 0; i < toEnrich.length; i += concurrency) {
+
+    const batch = toEnrich.slice(i, i + concurrency);
+
+    await Promise.all(batch.map(async p => {
+
+      p.difficulty = await fetchProblemDifficulty(p.slug);
+
+    }));
+
+  }
+
+
+
+  return problems;
+
+}
+
+
+
 function mergeSolvedProblems(firestoreRows, leetcodeRows) {
 
   const map = new Map();
@@ -277,6 +363,8 @@ async function fetchUserProgress(_db, uid) {
 
 
   const solvedProblems = mergeSolvedProblems(firestoreSolved, leetcodeSolved);
+
+  await enrichDifficulties(solvedProblems);
 
   const solvedSlugs = solvedProblems.map(p => p.slug);
 

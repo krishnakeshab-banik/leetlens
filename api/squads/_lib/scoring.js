@@ -92,9 +92,9 @@ function toMs(v) {
 }
 
 function squadStatus(squad, now = Date.now()) {
+  if (squad.status === 'cancelled' || squad.status === 'ended') return 'ended';
   const start = toMs(squad.startTime);
   const end = toMs(squad.endTime);
-  if (squad.status === 'ended') return 'ended';
   if (now < start) return 'scheduled';
   if (now >= end) return 'ended';
   return 'active';

@@ -41,6 +41,7 @@ function sanitizeSquad(squad, extras = {}) {
     description: squad.description || '',
     code: squad.code,
     creatorDisplayName: squad.creatorDisplayName,
+    creatorId: squad.creatorId || extras.creatorId || null,
     visibility: squad.visibility,
     maxMembers: squad.maxMembers,
     memberCount: extras.memberCount ?? squad.memberCount ?? 0,
