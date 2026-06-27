@@ -133,7 +133,7 @@ function switchView(viewId) {
       const params = joinCode
         ? { code: joinCode, tab: 'join', autoJoin: true }
         : undefined;
-      if (joinCode) window.LeetLensSquadsJoin?.rememberJoinCode?.(joinCode);
+      if (joinCode) window.LeetLensSquadsJoin?.markPendingAutoJoin?.(joinCode);
       window.LeetLensSquads.render('squads', params);
     }
   } else if (window.LeetLensSquads?.stopPolling) {
@@ -1180,9 +1180,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const joinCode = getJoinCodeFromUrl();
     if (joinCode) {
-      window.LeetLensSquadsJoin?.rememberJoinCode?.(joinCode);
       window.LeetLensSquadsJoin?.markPendingAutoJoin?.(joinCode);
-      switchView('squads');
+      await window.LeetLensSquadsJoin?.resumeJoinFlowWhenReady?.();
       return;
     }
     const hashView = window.location.hash.replace('#', '');

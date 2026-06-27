@@ -41,14 +41,42 @@
     try { sessionStorage.removeItem(PENDING_JOIN_KEY); } catch (_) {}
   }
 
-  function openSquadsJoinFlow() {
+  function cleanInviteUrl() {
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has('joinCode')) return;
+      url.searchParams.delete('joinCode');
+      const next = url.pathname + (url.search || '') + (url.hash || '');
+      window.history.replaceState({}, '', next);
+    } catch (_) {}
+  }
+
+  async function resumeJoinFlowWhenReady() {
     const code = readStoredJoinCode() || getJoinCodeFromUrl();
-    if (code) rememberJoinCode(code);
-    const params = code ? { code, tab: 'join', autoJoin: true } : undefined;
+    if (!code) return;
+
+    rememberJoinCode(code);
+    markPendingAutoJoin(code);
+
     window.switchView?.('squads');
-    if (params && window.LeetLensSquads) {
-      window.LeetLensSquads.render('squads', params);
+
+    try {
+      if (window.LeetLensCloud?.ensureAuthBoot) {
+        await window.LeetLensCloud.ensureAuthBoot();
+      }
+    } catch (_) {}
+
+    if (window.LeetLensSquads) {
+      window.LeetLensSquads.render('squads', {
+        code,
+        tab: 'join',
+        autoJoin: true
+      });
     }
+  }
+
+  function openSquadsJoinFlow() {
+    resumeJoinFlowWhenReady();
   }
 
   window.LeetLensSquads = {
@@ -73,7 +101,9 @@
     rememberJoinCode,
     markPendingAutoJoin,
     clearPendingJoin,
+    cleanInviteUrl,
     openSquadsJoinFlow,
+    resumeJoinFlowWhenReady,
     hasPendingJoin() {
       try {
         return !!sessionStorage.getItem(PENDING_JOIN_KEY);
@@ -86,17 +116,5 @@
   const inviteCode = getJoinCodeFromUrl();
   if (inviteCode) {
     markPendingAutoJoin(inviteCode);
-    const boot = () => {
-      if (!window.LeetLensSquadsUI) {
-        window.setTimeout(boot, 50);
-        return;
-      }
-      openSquadsJoinFlow();
-    };
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', boot);
-    } else {
-      boot();
-    }
   }
 })();

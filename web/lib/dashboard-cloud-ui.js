@@ -186,6 +186,14 @@
       </div>`;
   }
 
+  function navigateAfterAuthSuccess() {
+    if (window.LeetLensSquadsJoin?.hasPendingJoin?.()) {
+      window.LeetLensSquadsJoin.resumeJoinFlowWhenReady?.();
+      return;
+    }
+    window.switchView?.('profile');
+  }
+
   function bindAuthFormHandlers(state) {
     el('authTabSignIn')?.addEventListener('click', () => { authMode = 'signin'; renderSignInPage(state); });
     el('authTabSignUp')?.addEventListener('click', () => { authMode = 'signup'; renderSignInPage(state); });
@@ -203,7 +211,7 @@
           if (btn) btn.innerHTML = '<span>Redirecting to Google…</span>';
           return;
         }
-        window.switchView?.('profile');
+        navigateAfterAuthSuccess();
       } catch (err) {
         if (btn) { btn.disabled = false; btn.innerHTML = originalHtml; }
         renderSignInPage({ ...(cloud().getCloudState?.() || state), error: err.message, loading: false });
@@ -229,7 +237,7 @@
         if (status) { status.textContent = 'Please wait…'; status.className = 'auth-status info'; status.style.display = 'block'; }
         if (authMode === 'signup') await cloud().signUpWithEmailAccount(email, password, name);
         else await cloud().loginWithEmail(email, password);
-        window.switchView?.('profile');
+        navigateAfterAuthSuccess();
       } catch (err) {
         if (status) { status.textContent = err.message; status.className = 'auth-status error'; status.style.display = 'block'; }
       } finally {
@@ -833,13 +841,13 @@
     cloud().onCloudStateChange(state => {
       renderAll(state);
       if (state.user && !state.loading && window.LeetLensSquadsJoin?.hasPendingJoin?.()) {
-        window.LeetLensSquadsJoin.openSquadsJoinFlow();
-        window.LeetLensSquadsJoin.clearPendingJoin?.();
+        try { sessionStorage.removeItem('leetlensPendingAuthRedirect'); } catch (_) {}
+        window.LeetLensSquadsJoin.resumeJoinFlowWhenReady?.();
         return;
       }
       if (state.user && !state.loading && shouldNavigateAfterSignIn()) {
         try { sessionStorage.removeItem('leetlensPendingAuthRedirect'); } catch (_) {}
-        window.switchView?.('profile');
+        navigateAfterAuthSuccess();
       }
     });
 
@@ -851,8 +859,7 @@
     const hash = window.location.hash.replace('#', '');
     const validViews = ['overview', 'problems', 'revise', 'signin', 'profile', 'striver', 'plan', 'analytics', 'github', 'squads'];
     if (window.LeetLensSquadsJoin?.hasPendingJoin?.()) {
-      window.LeetLensSquadsJoin.openSquadsJoinFlow();
-      window.LeetLensSquadsJoin.clearPendingJoin?.();
+      await window.LeetLensSquadsJoin.resumeJoinFlowWhenReady?.();
     } else if (validViews.includes(hash)) {
       window.switchView?.(hash);
     }

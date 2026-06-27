@@ -499,6 +499,7 @@
       });
       try { sessionStorage.setItem(autoJoinStorageKey(normalized), 'done'); } catch (_) {}
       window.LeetLensSquadsJoin?.clearPendingJoin?.();
+      window.LeetLensSquadsJoin?.cleanInviteUrl?.();
       presetJoinCode = '';
       return squad;
     } catch (err) {
@@ -979,7 +980,7 @@
     let autoJoinError = '';
 
     if (inviteCode && !window.LeetLensCloud?.getCloudState()?.user) {
-      window.LeetLensSquadsJoin?.rememberJoinCode?.(String(inviteCode).trim().toUpperCase());
+      window.LeetLensSquadsJoin?.markPendingAutoJoin?.(String(inviteCode).trim().toUpperCase());
       content.innerHTML = `<div class="squads-card squads-signin-prompt">
         <span class="material-symbols-outlined text-4xl text-primary">group_add</span>
         <h3 class="font-semibold mt-3">Join Squad ${escapeHtml(inviteCode.toUpperCase())}</h3>
@@ -987,7 +988,8 @@
         <button type="button" class="squads-btn squads-btn-primary mt-4" id="squadsInviteSignIn">Sign In to Join</button>
       </div>`;
       el('squadsInviteSignIn')?.addEventListener('click', () => {
-        window.LeetLensSquadsJoin?.rememberJoinCode?.(String(inviteCode).trim().toUpperCase());
+        window.LeetLensSquadsJoin?.markPendingAutoJoin?.(String(inviteCode).trim().toUpperCase());
+        try { sessionStorage.setItem('leetlensPendingAuthRedirect', '1'); } catch (_) {}
         window.switchView?.('signin');
       });
       return;
@@ -1471,7 +1473,17 @@
       }
     } catch (_) {}
 
-    if (!window.LeetLensCloud?.getCloudState()?.user) {
+    const inviteCode = readInviteCode();
+    const isInviteJoin = currentTab === 'join' && !!inviteCode;
+    const user = window.LeetLensCloud?.getCloudState()?.user;
+
+    if (!user) {
+      if (isInviteJoin) {
+        renderHubShell(container);
+        const tabContent = el('squadsTabContent');
+        if (tabContent) return renderJoinTab(tabContent);
+        return;
+      }
       if (!requireAuth(container)) return;
     }
 
