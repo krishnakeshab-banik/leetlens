@@ -34,6 +34,7 @@ const COPY_LIB_FILES = [
   'lib/dashboard-github.js',
   'lib/dashboard-extension.js',
   'lib/dashboard-developers.js',
+  'lib/dashboard-squads-announcement.js',
   'lib/dashboard-enhanced.css',
   'lib/rating-modal.js'
 ];

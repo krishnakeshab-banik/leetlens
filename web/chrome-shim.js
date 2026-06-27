@@ -54,6 +54,44 @@
         response = { session: readStore(SESSION_KEY, null) };
       } else if (type === 'EXTENSION_PING') {
         response = { ok: false };
+      } else if (type === 'TOGGLE_BOOKMARK') {
+        const records = readStore(STORAGE_KEY, {});
+        if (records[msg.slug]) {
+          records[msg.slug].bookmarked = !!msg.bookmarked;
+          writeStore(STORAGE_KEY, records);
+        } else if (msg.bookmarked) {
+          records[msg.slug] = {
+            slug: msg.slug,
+            title: msg.slug,
+            difficulty: 'Easy',
+            totalMs: 0,
+            sessions: 0,
+            stars: 0,
+            bookmarked: true,
+            solved: false,
+            openedTabs: [],
+            firstSeen: Date.now(),
+            lastSeen: Date.now()
+          };
+          writeStore(STORAGE_KEY, records);
+        }
+        response = { ok: true };
+      } else if (type === 'MARK_SOLVED') {
+        const records = readStore(STORAGE_KEY, {});
+        if (records[msg.slug]) {
+          records[msg.slug].solved = true;
+          records[msg.slug].solvedAt = Date.now();
+          writeStore(STORAGE_KEY, records);
+        }
+        response = { ok: true };
+      } else if (type === 'MARK_PENDING') {
+        const records = readStore(STORAGE_KEY, {});
+        if (records[msg.slug]) {
+          records[msg.slug].solved = false;
+          records[msg.slug].solvedAt = null;
+          writeStore(STORAGE_KEY, records);
+        }
+        response = { ok: true };
       } else if (type === 'SET_STARS') {
         const records = readStore(STORAGE_KEY, {});
         if (records[msg.slug]) {

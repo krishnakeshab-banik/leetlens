@@ -65,6 +65,42 @@ function getYesterdayKey(timezone: string): string {
   return shiftDateKey(getTodayKey(timezone), -1);
 }
 
+function getDayBounds(dateKey: string): { start: Date; end: Date } {
+  const start = new Date(dateKey + 'T00:00:00');
+  const end = new Date(shiftDateKey(dateKey, 1) + 'T00:00:00');
+  return { start, end };
+}
+
+async function hasPracticedToday(
+  db: FirebaseFirestore.Firestore,
+  uid: string,
+  todayKey: string
+): Promise<boolean> {
+  const snapshot = await db.collection('users').doc(uid).collection('dailySnapshots').doc(todayKey).get();
+  if (snapshot.exists) {
+    const data = snapshot.data() || {};
+    if ((data.solvedToday as number) > 0) return true;
+  }
+
+  const { start: dayStart, end: dayEnd } = getDayBounds(todayKey);
+
+  const activitySnap = await db.collection('users').doc(uid).collection('activity')
+    .where('endedAt', '>=', Timestamp.fromDate(dayStart))
+    .where('endedAt', '<', Timestamp.fromDate(dayEnd))
+    .limit(1)
+    .get();
+  if (!activitySnap.empty) return true;
+
+  const solvedSnap = await db.collection('users').doc(uid).collection('solvedProblems')
+    .where('solvedAt', '>=', dayStart.getTime())
+    .where('solvedAt', '<', dayEnd.getTime())
+    .limit(1)
+    .get();
+  if (!solvedSnap.empty) return true;
+
+  return false;
+}
+
 function formatDateLabel(dateKey: string): string {
   const d = new Date(dateKey + 'T12:00:00');
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
@@ -465,24 +501,8 @@ export const sendDailyReminders = onSchedule(
       }
 
       try {
-        const snapshotRef = db.collection('users').doc(uid).collection('dailySnapshots').doc(todayKey);
-        const snapshot = await snapshotRef.get();
-
-        if (snapshot.exists) {
-          const data = snapshot.data() || {};
-          if ((data.solvedToday as number) > 0) {
-            skipped++;
-            continue;
-          }
-        }
-
-        const dayStart = new Date(todayKey + 'T00:00:00');
-        const activitySnap = await db.collection('users').doc(uid).collection('activity')
-          .where('endedAt', '>=', Timestamp.fromDate(dayStart))
-          .limit(1)
-          .get();
-
-        if (!activitySnap.empty) {
+        if (await hasPracticedToday(db, uid, todayKey)) {
+          await doc.ref.update({ lastReminderSentDate: todayKey });
           skipped++;
           continue;
         }
@@ -527,3 +547,5 @@ function getWeekId(date: Date, timezone: string): string {
   const monday = new Date(local.setDate(diff));
   return monday.toISOString().slice(0, 10);
 }
+
+export { squadsScheduledSync } from './squads/scheduledSync';

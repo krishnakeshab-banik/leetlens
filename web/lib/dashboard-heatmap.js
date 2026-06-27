@@ -1,19 +1,83 @@
-// GitHub-style submission heatmap — merges LeetCode + local activity
+// LeetCode-style submission heatmap — live calendar + local activity merge
 
 (function () {
   'use strict';
 
   let viewYear = new Date().getFullYear();
   let lastStateKey = '';
+  let calendarCache = {};
+
+  const CALENDAR_QUERY = `
+    query userCalendar($username: String!, $year: Int!) {
+      matchedUser(username: $username) {
+        userCalendar(year: $year) { submissionCalendar }
+      }
+    }
+  `;
 
   function el(id) { return document.getElementById(id); }
 
-  function getLevel(count) {
-    if (!count) return 0;
-    if (count <= 1) return 1;
-    if (count <= 3) return 2;
-    if (count <= 6) return 3;
+  function graphqlEndpoint() {
+    return window.__LEETLENS_WEB__ ? '/api/leetcode' : 'https://leetcode.com/graphql';
+  }
+
+  function parseSubmissionCalendar(calendarStr) {
+    if (!calendarStr) return {};
+    try {
+      return typeof calendarStr === 'string' ? JSON.parse(calendarStr) : calendarStr;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /** Normalize LeetCode keys (unix seconds) → YYYY-MM-DD UTC */
+  function normalizeCalendar(raw) {
+    const byDate = {};
+    Object.entries(raw || {}).forEach(([k, v]) => {
+      const count = Number(v) || 0;
+      if (!count) return;
+      const d = new Date(Number(k) * 1000);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+      byDate[key] = (byDate[key] || 0) + count;
+    });
+    return byDate;
+  }
+
+  async function fetchLeetCodeCalendar(username, year) {
+    const cacheKey = `${username}:${year}`;
+    if (calendarCache[cacheKey]) return calendarCache[cacheKey];
+
+    const res = await fetch(graphqlEndpoint(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: CALENDAR_QUERY, variables: { username, year } })
+    });
+    if (!res.ok) throw new Error('LeetCode calendar unavailable');
+    const json = await res.json();
+    const calendarStr = json?.data?.matchedUser?.userCalendar?.submissionCalendar;
+    const cal = normalizeCalendar(parseSubmissionCalendar(calendarStr));
+    calendarCache[cacheKey] = cal;
+    return cal;
+  }
+
+  /** LeetCode profile uses quartiles relative to the busiest day in the year */
+  function getLevel(count, maxCount) {
+    if (!count || count <= 0) return 0;
+    if (maxCount <= 1) return 4;
+    const ratio = count / maxCount;
+    if (ratio <= 0.25) return 1;
+    if (ratio <= 0.5) return 2;
+    if (ratio <= 0.75) return 3;
     return 4;
+  }
+
+  function maxCountForYear(calendar) {
+    let max = 0;
+    Object.entries(calendar).forEach(([k, v]) => {
+      if (!k.startsWith(String(viewYear))) return;
+      max = Math.max(max, Number(v) || 0);
+    });
+    return max;
   }
 
   function buildLocalCalendar(localRecords) {
@@ -22,9 +86,8 @@
       if (!r.solved) return;
       const ts = r.solvedAt || r.lastSeen;
       if (!ts) return;
-      const day = new Date(ts);
-      day.setHours(0, 0, 0, 0);
-      const key = Math.floor(day.getTime() / 1000);
+      const d = new Date(ts);
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
       cal[key] = (cal[key] || 0) + 1;
     });
     return cal;
@@ -38,48 +101,78 @@
     return merged;
   }
 
-  function buildWeeks(calendar) {
-    const start = new Date(viewYear, 0, 1);
-    const end = new Date(viewYear, 11, 31);
-    const weeks = [];
-    let current = new Date(start);
-    current.setDate(current.getDate() - current.getDay());
+  function utcDateKey(year, month, day) {
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
 
-    while (current <= end) {
+  function buildWeeks(calendar) {
+    const maxCount = maxCountForYear(calendar);
+    const weeks = [];
+    const start = new Date(Date.UTC(viewYear, 0, 1));
+    const end = new Date(Date.UTC(viewYear, 11, 31));
+    const cur = new Date(start);
+    cur.setUTCDate(cur.getUTCDate() - cur.getUTCDay());
+
+    while (cur <= end) {
       const week = [];
       for (let d = 0; d < 7; d++) {
-        const day = new Date(current);
-        const key = Math.floor(day.getTime() / 1000);
-        const count = calendar[key] || calendar[String(key)] || 0;
-        week.push({ date: new Date(day), count, level: getLevel(count) });
-        current.setDate(current.getDate() + 1);
+        const y = cur.getUTCFullYear();
+        const m = cur.getUTCMonth();
+        const day = cur.getUTCDate();
+        const key = utcDateKey(y, m, day);
+        const count = calendar[key] || 0;
+        const inYear = y === viewYear;
+        week.push({
+          date: new Date(Date.UTC(y, m, day)),
+          count: inYear ? count : 0,
+          level: inYear ? getLevel(count, maxCount) : 0,
+          inYear
+        });
+        cur.setUTCDate(cur.getUTCDate() + 1);
       }
       weeks.push(week);
     }
     return weeks;
   }
 
-  function totalSubmissions(calendar) {
-    return Object.values(calendar).reduce((s, n) => s + (Number(n) || 0), 0);
+  function activeDays(calendar) {
+    return Object.entries(calendar).filter(([k, v]) => {
+      return k.startsWith(String(viewYear)) && Number(v) > 0;
+    }).length;
   }
 
-  function render(state, localRecords = {}) {
+  function totalSubmissions(calendar) {
+    return Object.entries(calendar).reduce((s, [k, n]) => {
+      if (!k.startsWith(String(viewYear))) return s;
+      return s + (Number(n) || 0);
+    }, 0);
+  }
+
+  function renderLoading() {
+    const container = el('submissionHeatmap');
+    if (!container) return;
+    container.innerHTML = `
+      <div class="flex items-center gap-2 text-sm text-on-surface-variant py-4">
+        <span class="material-symbols-outlined problems-loading-spin">progress_activity</span>
+        Loading submission heatmap from LeetCode…
+      </div>`;
+  }
+
+  function renderGrid(state, localRecords, calendar, fetchError) {
     const container = el('submissionHeatmap');
     if (!container) return;
 
-    const lcCalendar = state?.stats?.submissionCalendar || {};
-    const localCal = buildLocalCalendar(localRecords);
-    const calendar = mergeCalendars(lcCalendar, localCal);
     const weeks = buildWeeks(calendar);
-    const total = totalSubmissions(calendar);
+    const days = activeDays(calendar);
+    const submissions = totalSubmissions(calendar);
     const linked = Boolean(state?.profile?.leetcodeUsername);
-    const stateKey = `${viewYear}-${total}-${linked}`;
+    const stateKey = `${viewYear}-${days}-${submissions}-${linked}-${fetchError || ''}`;
     if (stateKey === lastStateKey && container.querySelector('.heatmap-grid')) return;
     lastStateKey = stateKey;
 
-    if (!linked && !total) {
+    if (!linked && !days) {
       container.innerHTML = `
-        <div class="text-sm text-on-surface-variant">Sign in and sync LeetCode profile to view heatmap. Local solves will appear once you track problems.</div>`;
+        <div class="text-sm text-on-surface-variant">Link your LeetCode profile in Profile settings to load your submission heatmap.</div>`;
       return;
     }
 
@@ -87,7 +180,8 @@
       <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <div class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Submission Heatmap</div>
-          <div class="text-xs text-on-surface-variant mt-1">${total} active day(s) · auto-updates</div>
+          <div class="text-xs text-on-surface-variant mt-1">${days} active day(s) · ${submissions} submission(s) in ${viewYear}${linked ? ' · LeetCode calendar' : ''}</div>
+          ${fetchError ? `<div class="text-xs text-amber-400/80 mt-1">${fetchError}</div>` : ''}
         </div>
         <div class="flex items-center gap-2">
           <button id="heatmapPrev" class="rev-cal-nav-btn" type="button">‹</button>
@@ -100,7 +194,7 @@
           ${weeks.map(week => `
             <div class="heatmap-week">
               ${week.map(day => `
-                <div class="heatmap-cell level-${day.level}" title="${day.date.toDateString()}: ${day.count} submission(s)"></div>
+                <div class="heatmap-cell level-${day.level}${day.inYear ? '' : ' out-year'}" title="${day.inYear ? `${day.date.toLocaleDateString(undefined, { timeZone: 'UTC' })}: ${day.count} submission(s)` : ''}"></div>
               `).join('')}
             </div>
           `).join('')}
@@ -110,11 +204,39 @@
         <span>Less</span>
         ${[0, 1, 2, 3, 4].map(l => `<div class="heatmap-legend level-${l}"></div>`).join('')}
         <span>More</span>
-        ${linked ? '<span class="ml-auto">LeetCode + LeetLens activity</span>' : '<span class="ml-auto">LeetLens activity</span>'}
+        ${linked ? '<span class="ml-auto">Matches LeetCode profile activity colors</span>' : '<span class="ml-auto">Local activity</span>'}
       </div>`;
 
-    el('heatmapPrev')?.addEventListener('click', () => { viewYear--; lastStateKey = ''; render(state, localRecords); });
-    el('heatmapNext')?.addEventListener('click', () => { viewYear++; lastStateKey = ''; render(state, localRecords); });
+    el('heatmapPrev')?.addEventListener('click', () => {
+      viewYear--;
+      lastStateKey = '';
+      render(state, localRecords);
+    });
+    el('heatmapNext')?.addEventListener('click', () => {
+      viewYear++;
+      lastStateKey = '';
+      render(state, localRecords);
+    });
+  }
+
+  async function render(state, localRecords = {}) {
+    const username = state?.profile?.leetcodeUsername;
+    const localCal = buildLocalCalendar(localRecords);
+    let lcCalendar = normalizeCalendar(state?.stats?.submissionCalendar || {});
+    let fetchError = null;
+
+    if (username) {
+      renderLoading();
+      try {
+        lcCalendar = await fetchLeetCodeCalendar(username, viewYear);
+      } catch (err) {
+        fetchError = 'Could not reach LeetCode — showing cached data.';
+        lcCalendar = normalizeCalendar(state?.stats?.submissionCalendar || {});
+      }
+    }
+
+    const calendar = mergeCalendars(lcCalendar, localCal);
+    renderGrid(state, localRecords, calendar, fetchError);
   }
 
   window.LeetLensHeatmap = { render };

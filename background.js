@@ -51,6 +51,30 @@ async function upsertSession(slug, title, difficulty, elapsedMs) {
   return records[slug];
 }
 
+async function updateBookmark(slug, bookmarked) {
+  const records = await getRecords();
+  if (!records[slug]) {
+    if (!bookmarked) return;
+    records[slug] = {
+      slug,
+      title: slug,
+      difficulty: 'Easy',
+      totalMs: 0,
+      sessions: 0,
+      stars: 0,
+      bookmarked: true,
+      solved: false,
+      openedTabs: [],
+      firstSeen: now(),
+      lastSeen: now()
+    };
+  } else {
+    records[slug].bookmarked = !!bookmarked;
+  }
+  await saveRecords(records);
+  broadcastUpdate();
+}
+
 async function updateStars(slug, stars) {
   const records = await getRecords();
   if (!records[slug]) {
@@ -247,6 +271,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           activeSession.title = msg.title || activeSession.title;
           activeSession.difficulty = msg.difficulty || activeSession.difficulty;
         }
+        sendResponse({ ok: true });
+        break;
+      }
+      case 'TOGGLE_BOOKMARK': {
+        await updateBookmark(msg.slug, msg.bookmarked);
         sendResponse({ ok: true });
         break;
       }

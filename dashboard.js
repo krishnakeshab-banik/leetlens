@@ -35,11 +35,12 @@ const VIEW_TITLES = {
   signin:   'Sign In',
   profile:  'Profile',
   striver:  'A2Z Striver Sheet',
-  plan:     'Weekly Plan',
+  plan:     'Personal Goals',
   analytics: 'Analytics',
   github:   'GitHub Sync',
   developers: 'Developers',
-  extension: 'Extension'
+  extension: 'Extension',
+  squads: 'Squads'
 };
 
 const DESKTOP_ONLY_VIEWS = [];
@@ -115,6 +116,19 @@ function switchView(viewId) {
   if (viewId === 'extension' && window.LeetLensExtension) {
     window.LeetLensExtension.render();
   }
+  if (viewId === 'squads') {
+    if (window.LeetLensSquads) {
+      const joinCode = sessionStorage.getItem('squadsJoinCode')
+        || new URLSearchParams(window.location.search).get('joinCode');
+      const params = joinCode
+        ? { code: joinCode, tab: 'join', autoJoin: true }
+        : undefined;
+      if (joinCode) sessionStorage.removeItem('squadsJoinCode');
+      window.LeetLensSquads.render('squads', params);
+    }
+  } else if (window.LeetLensSquads?.stopPolling) {
+    window.LeetLensSquads.stopPolling();
+  }
   if (viewId === 'problems') {
     loadMergedRecords().then(() => renderProblems());
   }
@@ -184,6 +198,7 @@ function mergeProblemRecord(mergedRecords, slug, incoming) {
   }
   if (incoming.totalMs > (rec.totalMs || 0)) rec.totalMs = incoming.totalMs;
   if (incoming.stars > (rec.stars || 0)) rec.stars = incoming.stars;
+  if (incoming.source === 'tracked' && incoming.bookmarked != null) rec.bookmarked = incoming.bookmarked;
   if (incoming.solvedAt && (!rec.solvedAt || incoming.solvedAt > rec.solvedAt)) rec.solvedAt = incoming.solvedAt;
   rec.lastSeen = Math.max(rec.lastSeen || 0, incoming.lastSeen || 0);
   if (incoming.source === 'tracked' && rec.source === 'leetcode') rec.source = 'both';
@@ -375,7 +390,8 @@ async function loadMergedRecords() {
       mergeProblemRecord(next, slug, {
         ...rec,
         source: 'tracked',
-        solved: !!rec.solved
+        solved: !!rec.solved,
+        bookmarked: !!rec.bookmarked
       });
     });
 
@@ -452,6 +468,7 @@ function shouldShowRecord(record) {
   if (currentFilter === 'hard') return record.difficulty === 'Hard';
   if (currentFilter === 'tracked') return record.source === 'tracked' || record.source === 'both';
   if (currentFilter === 'leetcode') return record.source === 'leetcode' || record.source === 'both';
+  if (currentFilter === 'bookmarked') return !!record.bookmarked;
   if (currentFilter === 'star-0') return !record.stars;
   if (currentFilter.startsWith('star-')) {
     const n = parseInt(currentFilter.replace('star-', ''), 10);
@@ -570,10 +587,15 @@ function renderProblems() {
       <tr>
         <td class="problem-num font-semibold text-on-surface-variant/60">${idx + 1}</td>
         <td>
-          <a href="https://leetcode.com/problems/${record.slug}/" target="_blank" class="table-problem-link">
-            ${record.title || record.slug}
-          </a>
-          ${sourceBadge}
+          <div class="flex items-center gap-1">
+            <button type="button" class="problem-bookmark-btn ${record.bookmarked ? 'active' : ''}" data-slug="${record.slug}" title="${record.bookmarked ? 'Remove bookmark' : 'Bookmark'}">
+              <span class="material-symbols-outlined">${record.bookmarked ? 'bookmark' : 'bookmark_border'}</span>
+            </button>
+            <a href="https://leetcode.com/problems/${record.slug}/" target="_blank" class="table-problem-link">
+              ${record.title || record.slug}
+            </a>
+            ${sourceBadge}
+          </div>
         </td>
         <td>
           <span class="status-badge ${statusClass}">${statusText}</span>
@@ -604,6 +626,13 @@ function renderProblems() {
   contentDiv.innerHTML = html;
 
   // Programmatic event listeners for table interactivity
+  contentDiv.querySelectorAll('.problem-bookmark-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleBookmarkTable(btn.dataset.slug);
+    });
+  });
+
   contentDiv.querySelectorAll('.table-star').forEach(star => {
     star.addEventListener('click', (e) => {
       const parent = e.target.parentElement;
@@ -645,6 +674,17 @@ function toggleSolved(slug, solved) {
   const msgType = solved ? 'MARK_SOLVED' : 'MARK_PENDING';
   chrome.runtime.sendMessage({ type: msgType, slug }, () => {
     loadData(); // final sync to confirm persisted state
+  });
+}
+
+function toggleBookmarkTable(slug) {
+  const next = !allRecords[slug]?.bookmarked;
+  if (allRecords[slug]) {
+    allRecords[slug].bookmarked = next;
+    renderProblems();
+  }
+  chrome.runtime.sendMessage({ type: 'TOGGLE_BOOKMARK', slug, bookmarked: next }, () => {
+    loadData();
   });
 }
 
@@ -1128,12 +1168,22 @@ document.addEventListener('DOMContentLoaded', () => {
         await window.LeetLensCloud.ensureAuthBoot();
       } catch (_) {}
     }
+    const joinCode = new URLSearchParams(window.location.search).get('joinCode');
+    if (joinCode) {
+      try { sessionStorage.setItem('squadsJoinCode', joinCode.toUpperCase()); } catch (_) {}
+      switchView('squads');
+      return;
+    }
     const hashView = window.location.hash.replace('#', '');
-    if (hashView && ['overview', 'problems', 'revise', 'signin', 'profile', 'striver', 'plan', 'analytics', 'github', 'developers', 'extension'].includes(hashView)) {
+    const squadsLegacy = ['squads-create', 'squads-join', 'squads-active', 'squads-history', 'squads-detail', 'squads-results'];
+    if (squadsLegacy.includes(hashView)) {
+      switchView('squads');
+    } else if (hashView && ['overview', 'problems', 'revise', 'signin', 'profile', 'striver', 'plan', 'analytics', 'github', 'developers', 'extension', 'squads'].includes(hashView)) {
       switchView(hashView);
     }
   }
   applyInitialView();
+  setTimeout(() => window.LeetLensSquadsAnnouncement?.maybeShow(), 800);
 
   // Initial load
   loadData();

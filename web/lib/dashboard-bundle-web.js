@@ -21479,6 +21479,59 @@ This typically indicates that your device does not have a healthy Internet conne
     }
     return problems;
   }
+  async function fetchRecentAcActivity(username, startDate, endDate, maxPages = 20) {
+    const startMs = (/* @__PURE__ */ new Date(`${startDate}T00:00:00`)).getTime();
+    const endMs = (/* @__PURE__ */ new Date(`${endDate}T23:59:59`)).getTime();
+    const results = [];
+    const pageSize = 50;
+    let skip = 0;
+    let usePaging = true;
+    for (let page = 0; page < maxPages; page++) {
+      let batch = [];
+      if (usePaging) {
+        try {
+          const data = await graphql(RECENT_AC_PAGED_QUERY, { username, limit: pageSize, skip });
+          batch = data?.recentAcSubmissionList || [];
+        } catch (_) {
+          usePaging = false;
+        }
+      }
+      if (!usePaging) {
+        const data = await graphql(RECENT_AC_QUERY, { username, limit: Math.min(pageSize * maxPages, 500) });
+        batch = data?.recentAcSubmissionList || [];
+        batch.forEach((s) => {
+          const ts = Number(s.timestamp) * 1e3;
+          if (!ts || ts < startMs || ts > endMs) return;
+          results.push({
+            problemId: String(s.titleSlug || "").toLowerCase(),
+            title: s.title || s.titleSlug,
+            solvedAt: ts,
+            difficulty: "Unknown",
+            source: "leetcode-recent"
+          });
+        });
+        break;
+      }
+      if (!batch.length) break;
+      let oldestInBatch = Infinity;
+      batch.forEach((s) => {
+        const ts = Number(s.timestamp) * 1e3;
+        if (ts) oldestInBatch = Math.min(oldestInBatch, ts);
+        if (!ts || ts < startMs || ts > endMs) return;
+        results.push({
+          problemId: String(s.titleSlug || "").toLowerCase(),
+          title: s.title || s.titleSlug,
+          solvedAt: ts,
+          difficulty: "Unknown",
+          source: "leetcode-recent"
+        });
+      });
+      if (oldestInBatch < startMs) break;
+      if (batch.length < pageSize) break;
+      skip += pageSize;
+    }
+    return results;
+  }
   async function fetchAllSolvedProblems(username) {
     const profileData = await fetchUserProfile(username);
     const total = profileData.stats.totalSolved || 0;
@@ -21856,9 +21909,9 @@ This typically indicates that your device does not have a healthy Internet conne
     const user = cloudState.user;
     if (!user) return null;
     const [snapshots, solved, activity] = await Promise.all([
-      getDailySnapshots(user.uid),
+      getDailySnapshots(user.uid, 30),
       getSolvedProblems(user.uid),
-      getRecentActivity(user.uid, 50)
+      getRecentActivity(user.uid, 20)
     ]);
     return { snapshots, solved, activity, stats: cloudState.stats };
   }
@@ -21881,6 +21934,34 @@ This typically indicates that your device does not have a healthy Internet conne
     }
     return problems;
   }
+  async function fetchPlanLeetCodeActivity(startDate, endDate, forceRefresh = false) {
+    const username = cloudState.profile?.leetcodeUsername;
+    if (!username) return [];
+    const start = String(startDate || "").slice(0, 10);
+    const end = String(endDate || "").slice(0, 10);
+    const cacheKey = `lc_plan_${username}_${start}_${end}`;
+    if (!forceRefresh) {
+      try {
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+          const { at: at2, problems: problems2 } = JSON.parse(cached);
+          if (Date.now() - at2 < 5 * 60 * 1e3) return problems2;
+        }
+      } catch (_) {
+      }
+    } else {
+      try {
+        sessionStorage.removeItem(cacheKey);
+      } catch (_) {
+      }
+    }
+    const problems = await fetchRecentAcActivity(username, start, end);
+    try {
+      sessionStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), problems }));
+    } catch (_) {
+    }
+    return problems;
+  }
   async function fetchWeeklyPlanData() {
     const user = cloudState.user;
     if (!user) return null;
@@ -21897,11 +21978,33 @@ This typically indicates that your device does not have a healthy Internet conne
     await saveWeeklyPlan(user.uid, range.weekId, {
       ...existing,
       weekId: range.weekId,
-      startDate: range.startDate,
-      endDate: range.endDate,
+      startDate: existing.startDate || range.startDate,
+      endDate: existing.endDate || range.endDate,
       goals
     });
     return goals;
+  }
+  async function updateWeeklyPlanSchedule(startDate, endDate) {
+    const user = await requireAuthUser();
+    const range = getWeekRange();
+    const existing = await getCurrentWeeklyPlan(user.uid) || { goals: [] };
+    const start = String(startDate || "").slice(0, 10);
+    const end = String(endDate || "").slice(0, 10);
+    if (!start || !end || end < start) {
+      throw new Error("End date must be on or after start date");
+    }
+    const baselineSlugs = await capturePlanBaselineSlugs({ includeLive: true });
+    await saveWeeklyPlan(user.uid, range.weekId, {
+      ...existing,
+      weekId: range.weekId,
+      startDate: start,
+      endDate: end,
+      customSchedule: true,
+      baselineSlugs,
+      baselineForStart: start,
+      goals: existing.goals || []
+    });
+    return { startDate: start, endDate: end };
   }
   async function addWeeklyGoal(goal) {
     const goals = await fetchWeeklyGoals();
@@ -21933,22 +22036,148 @@ This typically indicates that your device does not have a healthy Internet conne
     await saveWeeklyGoals(goals);
     return goals;
   }
+  function planDateKey(ts) {
+    if (ts == null) return null;
+    const ms = typeof ts === "number" ? ts : ts?.toMillis?.() ?? Date.parse(ts);
+    if (!ms || Number.isNaN(ms)) return null;
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+  function isInPlanRange(ts, startDate, endDate) {
+    const key = planDateKey(ts);
+    if (!key) return false;
+    return key >= startDate && key <= endDate;
+  }
+  async function capturePlanBaselineSlugs(options = {}) {
+    const { includeLive = false } = options;
+    const slugs = /* @__PURE__ */ new Set();
+    try {
+      const analytics = await fetchAnalyticsData();
+      (analytics?.solved || []).forEach((p) => {
+        const slug = String(p.problemId || "").toLowerCase();
+        if (slug) slugs.add(slug);
+      });
+    } catch (_) {
+    }
+    if (includeLive) {
+      const username = cloudState.profile?.leetcodeUsername;
+      if (username) {
+        try {
+          const live = await fetchLiveLeetCodeProblems();
+          live.forEach((p) => {
+            const slug = String(p.problemId || "").toLowerCase();
+            if (slug) slugs.add(slug);
+          });
+        } catch (_) {
+        }
+      }
+    }
+    return [...slugs];
+  }
+  function isNewPlanSolve(slug, baselineSet, solvedAt, startDate, endDate) {
+    const normalized = String(slug || "").toLowerCase();
+    if (!normalized || baselineSet.has(normalized)) return false;
+    return isInPlanRange(solvedAt, startDate, endDate);
+  }
+  async function syncPlanFromLeetCode(options = {}) {
+    const { forceRefresh = false } = options;
+    const user = await requireAuthUser();
+    const range = getWeekRange();
+    const plan = await getCurrentWeeklyPlan(user.uid) || { goals: [] };
+    const startDate = plan.startDate || range.startDate;
+    const endDate = plan.endDate || range.endDate;
+    const goals = (plan.goals || []).map((g) => ({ ...g, completedSlugs: [...g.completedSlugs || []] }));
+    let baselineSlugs = plan.baselineSlugs;
+    if (!baselineSlugs?.length || plan.baselineForStart !== startDate) {
+      baselineSlugs = await capturePlanBaselineSlugs({ includeLive: forceRefresh });
+    }
+    const baselineSet = new Set(baselineSlugs.map((s) => String(s).toLowerCase()));
+    const slugMap = /* @__PURE__ */ new Map();
+    const analytics = await fetchAnalyticsData();
+    (analytics?.solved || []).forEach((p) => {
+      const slug = String(p.problemId || "").toLowerCase();
+      if (!isNewPlanSolve(slug, baselineSet, p.solvedAt, startDate, endDate)) return;
+      slugMap.set(slug, {
+        slug,
+        difficulty: p.difficulty || "Unknown",
+        solvedAt: p.solvedAt
+      });
+    });
+    const username = cloudState.profile?.leetcodeUsername;
+    if (username) {
+      try {
+        if (forceRefresh) {
+          const startKey = String(startDate).slice(0, 10);
+          const endKey = String(endDate).slice(0, 10);
+          sessionStorage.removeItem(`lc_live_${username}`);
+          sessionStorage.removeItem(`lc_plan_${username}_${startKey}_${endKey}`);
+        }
+        const live = forceRefresh ? await fetchLiveLeetCodeProblems() : await fetchPlanLeetCodeActivity(startDate, endDate, forceRefresh);
+        live.forEach((p) => {
+          const slug = String(p.problemId || "").toLowerCase();
+          if (!isNewPlanSolve(slug, baselineSet, p.solvedAt, startDate, endDate)) return;
+          if (!slugMap.has(slug)) {
+            slugMap.set(slug, {
+              slug,
+              difficulty: p.difficulty || "Unknown",
+              solvedAt: p.solvedAt
+            });
+          }
+        });
+      } catch (_) {
+      }
+    }
+    const solves = [...slugMap.values()].sort((a, b) => (a.solvedAt || 0) - (b.solvedAt || 0));
+    goals.forEach((goal) => {
+      let matched = [];
+      if (goal.type === "specific") {
+        const targets = (goal.targetSlugs || []).map((s) => String(s).toLowerCase());
+        matched = solves.filter((s) => targets.includes(s.slug));
+        goal.completedSlugs = matched.map((s) => s.slug);
+      } else if (goal.type === "count" || goal.type === "difficulty") {
+        matched = solves;
+        const diffFilter = goal.type === "difficulty" ? goal.difficulty : goal.difficulty;
+        if (diffFilter && diffFilter !== "all") {
+          matched = matched.filter((s) => s.difficulty === diffFilter);
+        }
+        const limit2 = goal.targetCount || matched.length;
+        goal.completedSlugs = matched.slice(0, limit2).map((s) => s.slug);
+      }
+      const target = goal.type === "specific" ? (goal.targetSlugs || []).length : goal.targetCount || 0;
+      goal.status = target > 0 && (goal.completedSlugs || []).length >= target ? "completed" : "active";
+    });
+    await saveWeeklyPlan(user.uid, range.weekId, {
+      ...plan,
+      weekId: range.weekId,
+      startDate,
+      endDate,
+      baselineSlugs,
+      baselineForStart: startDate,
+      goals,
+      lastSyncedAt: Date.now()
+    });
+    return { goals, solvesInPeriod: solves.length, startDate, endDate };
+  }
   async function markGoalProblemComplete(slug) {
+    const normalized = String(slug || "").toLowerCase();
+    if (!normalized) return;
+    const plan = await fetchWeeklyPlanData();
+    const baselineSet = new Set((plan?.baselineSlugs || []).map((s) => String(s).toLowerCase()));
+    if (baselineSet.has(normalized)) return;
     const goals = await fetchWeeklyGoals();
     let changed = false;
     goals.forEach((goal) => {
       if (goal.status === "completed") return;
       const completed = goal.completedSlugs || [];
-      if (completed.includes(slug)) return;
+      if (completed.includes(normalized)) return;
       if (goal.type === "specific") {
-        const targets = goal.targetSlugs || [];
-        if (targets.includes(slug)) {
-          completed.push(slug);
+        const targets = (goal.targetSlugs || []).map((s) => String(s).toLowerCase());
+        if (targets.includes(normalized)) {
+          completed.push(normalized);
           goal.completedSlugs = completed;
           changed = true;
         }
-      } else if (goal.type === "count") {
-        completed.push(slug);
+      } else if (goal.type === "count" || goal.type === "difficulty") {
+        completed.push(normalized);
         goal.completedSlugs = completed;
         changed = true;
       }
@@ -22007,6 +22236,10 @@ This typically indicates that your device does not have a healthy Internet conne
     await markWeeklyProblemComplete(record.slug);
     await markGoalProblemComplete(record.slug);
   }
+  async function getAuthToken(forceRefresh = false) {
+    const user = await requireAuthUser();
+    return user.getIdToken(forceRefresh);
+  }
   var LeetLensCloudAPI = {
     initCloud,
     ensureAuthBoot,
@@ -22027,15 +22260,19 @@ This typically indicates that your device does not have a healthy Internet conne
     updateReminderSettings,
     fetchAnalyticsData,
     fetchLiveLeetCodeProblems,
+    fetchPlanLeetCodeActivity,
     fetchWeeklyPlanData,
     fetchWeeklyGoals,
     addWeeklyGoal,
     updateWeeklyGoal,
     deleteWeeklyGoal,
+    updateWeeklyPlanSchedule,
+    syncPlanFromLeetCode,
     createOrUpdateWeeklyPlan,
     markWeeklyProblemComplete,
     onProblemSolved,
     validateUsername,
+    getAuthToken,
     isFirebaseConfigured,
     isPendingAuthRedirect,
     isAuthCallbackUrl

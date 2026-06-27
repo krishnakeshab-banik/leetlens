@@ -64,6 +64,7 @@
   </script>
   <link href="tailwind.css" rel="stylesheet" />
   <link href="lib/dashboard-enhanced.css" rel="stylesheet" />
+  <link href="lib/squads/squads.css" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&display=swap"
     rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -257,6 +258,34 @@
 
     .problem-stars.empty {
       color: #353437;
+    }
+
+    .problem-bookmark-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: transparent;
+      color: #6b6560;
+      cursor: pointer;
+      border-radius: 6px;
+      padding: 0;
+      flex-shrink: 0;
+    }
+
+    .problem-bookmark-btn .material-symbols-outlined {
+      font-size: 18px;
+    }
+
+    .problem-bookmark-btn:hover {
+      color: #ffa116;
+      background: rgba(255, 161, 22, 0.08);
+    }
+
+    .problem-bookmark-btn.active {
+      color: #ffa116;
     }
 
     .action-btn {
@@ -893,6 +922,11 @@
         Extension
       </div>
 
+      <div class="nav-item" id="navSquads" data-view="squads">
+        <span class="material-symbols-outlined text-lg">groups</span>
+        Squads
+      </div>
+
       <div class="nav-section-label">About</div>
       <div class="nav-item" id="navDevelopers" data-view="developers">
         <span class="material-symbols-outlined text-lg">groups</span>
@@ -1126,18 +1160,21 @@
         </div>
 
         <!-- Overview widgets row -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-card-gap">
-          <div class="glass-panel p-5 rounded-xl" id="weeklyGoalWidget">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Weekly Goal</div>
-            <div class="text-sm text-on-surface-variant mt-2">Sign in to track weekly goals</div>
+        <div class="overview-widgets-row grid grid-cols-1 lg:grid-cols-3 gap-card-gap">
+          <div class="glass-panel overview-widget-card p-5 rounded-xl" id="weeklyGoalWidget">
+            <div class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Personal Goals</div>
+            <div class="text-sm text-on-surface-variant mt-2">Sign in to track goals</div>
           </div>
-          <div class="glass-panel p-5 rounded-xl" id="a2zProgressWidget">
+          <div class="glass-panel overview-widget-card p-5 rounded-xl" id="a2zProgressWidget">
             <div class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">A2Z Progress</div>
             <div class="text-sm text-on-surface-variant mt-2">Loading…</div>
           </div>
-          <div class="glass-panel p-5 rounded-xl">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant mb-3">Recent Activity</div>
-            <div id="recentActivityList"></div>
+          <div class="glass-panel overview-widget-card p-5 rounded-xl">
+            <div class="overview-widget-head">
+              <div class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Recent Activity</div>
+              <span class="overview-widget-meta">Last 5 solves</span>
+            </div>
+            <div class="overview-widget-scroll" id="recentActivityList"></div>
           </div>
         </div>
 
@@ -1189,6 +1226,9 @@
                 <optgroup label="Source">
                   <option value="tracked">Tracked (LeetLens)</option>
                   <option value="leetcode">LeetCode synced</option>
+                </optgroup>
+                <optgroup label="Saved">
+                  <option value="bookmarked">Bookmarked</option>
                 </optgroup>
                 <optgroup label="Rating">
                   <option value="star-0">Unrated</option>
@@ -1335,8 +1375,8 @@
       <!-- ══════════════════ VIEW: WEEKLY PLAN ══════════════════ -->
       <div id="view-plan" class="view-panel space-y-6">
         <div>
-          <h1 class="text-headline-lg font-headline-lg text-on-surface">Weekly Plan</h1>
-          <p class="text-sm text-on-surface-variant mt-1">Set weekly goals and track completion.</p>
+          <h1 class="text-headline-lg font-headline-lg text-on-surface">Personal Goals</h1>
+          <p class="text-sm text-on-surface-variant mt-1">Set targets, sync LeetCode progress, and track completion.</p>
         </div>
         <div id="planContent"></div>
       </div>
@@ -1360,6 +1400,9 @@
       <div id="view-developers" class="view-panel developers-view space-y-6">
         <div id="developersContent" class="developers-view-content"></div>
       </div>
+
+      <!-- ══════════════════ VIEW: SQUADS ══════════════════ -->
+      <div id="view-squads" class="view-panel space-y-6"></div>
 
       <!-- ══════════════════ VIEW: GITHUB ══════════════════ -->
       <div id="view-github" class="view-panel space-y-6">
@@ -1397,6 +1440,10 @@
   <script src="lib/dashboard-github.js"></script>
   <script src="lib/dashboard-extension.js"></script>
   <script src="lib/dashboard-developers.js"></script>
+  <script src="lib/squads/squads-api.js"></script>
+  <script src="lib/squads/squads-ui.js"></script>
+  <script src="lib/dashboard-squads.js"></script>
+  <script src="lib/dashboard-squads-announcement.js"></script>
 
 </body>
 

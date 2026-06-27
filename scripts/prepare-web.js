@@ -13,7 +13,16 @@ const VERCEL_ANALYTICS_SNIPPET = [
   '<script>',
   '  window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };',
   '</script>',
-  '<script defer src="/_vercel/insights/script.js"></script>'
+  '<script>',
+  '  (function () {',
+  '    var h = location.hostname;',
+  '    if (h === "localhost" || h === "127.0.0.1") return;',
+  '    var s = document.createElement("script");',
+  '    s.defer = true;',
+  '    s.src = "/_vercel/insights/script.js";',
+  '    document.head.appendChild(s);',
+  '  })();',
+  '</script>'
 ].join('\n');
 
 const COPY_DIRS = ['lib', 'assets', 'data', 'icons'];
@@ -28,6 +37,7 @@ const REQUIRED_LIB_FILES = [
   'dashboard-github.js',
   'dashboard-extension.js',
   'dashboard-developers.js',
+  'dashboard-squads-announcement.js',
   'dashboard-enhanced.css'
 ];
 

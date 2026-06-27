@@ -6,9 +6,12 @@ web/lib/background-bundle.js
 /vercel-analytics.js
 web/vercel-analytics.js
 .env
+firebase-service-account.json
+*.service-account.json
 .firebase/
 functions/lib/
 *.log
 dist/
 leetlens-mirror/
 extension/
+.vercel

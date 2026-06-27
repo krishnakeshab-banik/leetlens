@@ -37,5 +37,35 @@ service cloud.firestore {
         allow read, write: if isOwner(uid);
       }
     }
+
+    // Squads — all writes via Admin SDK (Vercel API / Cloud Functions)
+    match /squads/{squadId} {
+      allow read, write: if false;
+      match /members/{memberId} {
+        allow read, write: if false;
+      }
+      match /baselines/{baselineId} {
+        allow read, write: if false;
+      }
+      match /leaderboard/{entryId} {
+        allow read, write: if false;
+      }
+      match /results/{resultId} {
+        allow read, write: if false;
+      }
+    }
+
+    match /squadCodes/{code} {
+      allow read, write: if false;
+    }
+
+    match /userSquads/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+      match /entries/{entryId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+    }
   }
 }

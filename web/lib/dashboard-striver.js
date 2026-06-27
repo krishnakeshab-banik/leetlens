@@ -219,15 +219,18 @@
     const widget = el('a2zProgressWidget');
     if (!widget) return;
     widget.innerHTML = `
-      <div class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant mb-2">A2Z Progress</div>
-      <div class="flex items-end gap-2">
-        <div class="text-3xl font-bold text-primary">${progress.percent}%</div>
-        <div class="text-xs text-on-surface-variant mb-1">${progress.completed}/${progress.total}</div>
+      <div class="overview-widget-head">
+        <div class="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">A2Z Progress</div>
+        <span class="overview-widget-meta">${progress.completed}/${progress.total}</span>
       </div>
-      <div class="w-full h-2 bg-surface-container-highest rounded-full mt-3 overflow-hidden">
-        <div class="h-full bg-gradient-to-r from-diff-easy to-primary rounded-full transition-all" style="width:${progress.percent}%"></div>
-      </div>
-      <button id="a2zWidgetGo" class="text-[10px] text-primary font-bold uppercase mt-3 hover:underline">View sheet →</button>`;
+      <div class="overview-widget-body">
+        <div>
+          <div class="overview-widget-stat">${progress.percent}%</div>
+          <div class="overview-widget-sub">Striver A2Z sheet completion</div>
+          <div class="overview-widget-progress"><div style="width:${progress.percent}%"></div></div>
+        </div>
+        <button id="a2zWidgetGo" class="overview-widget-link">View sheet →</button>
+      </div>`;
     el('a2zWidgetGo')?.addEventListener('click', () => window.switchView?.('striver'));
   }
 

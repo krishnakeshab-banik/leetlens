@@ -260,6 +260,67 @@ async function fetchAcSubmissionsAll(username, targetTotal) {
   return problems;
 }
 
+/** Fast fetch: recent AC submissions within a date range (paginates until before startDate). */
+export async function fetchRecentAcActivity(username, startDate, endDate, maxPages = 20) {
+  const startMs = new Date(`${startDate}T00:00:00`).getTime();
+  const endMs = new Date(`${endDate}T23:59:59`).getTime();
+  const results = [];
+  const pageSize = 50;
+  let skip = 0;
+  let usePaging = true;
+
+  for (let page = 0; page < maxPages; page++) {
+    let batch = [];
+    if (usePaging) {
+      try {
+        const data = await graphql(RECENT_AC_PAGED_QUERY, { username, limit: pageSize, skip });
+        batch = data?.recentAcSubmissionList || [];
+      } catch (_) {
+        usePaging = false;
+      }
+    }
+
+    if (!usePaging) {
+      const data = await graphql(RECENT_AC_QUERY, { username, limit: Math.min(pageSize * maxPages, 500) });
+      batch = data?.recentAcSubmissionList || [];
+      batch.forEach(s => {
+        const ts = Number(s.timestamp) * 1000;
+        if (!ts || ts < startMs || ts > endMs) return;
+        results.push({
+          problemId: String(s.titleSlug || '').toLowerCase(),
+          title: s.title || s.titleSlug,
+          solvedAt: ts,
+          difficulty: 'Unknown',
+          source: 'leetcode-recent'
+        });
+      });
+      break;
+    }
+
+    if (!batch.length) break;
+
+    let oldestInBatch = Infinity;
+    batch.forEach(s => {
+      const ts = Number(s.timestamp) * 1000;
+      if (ts) oldestInBatch = Math.min(oldestInBatch, ts);
+      if (!ts || ts < startMs || ts > endMs) return;
+      results.push({
+        problemId: String(s.titleSlug || '').toLowerCase(),
+        title: s.title || s.titleSlug,
+        solvedAt: ts,
+        difficulty: 'Unknown',
+        source: 'leetcode-recent'
+      });
+    });
+
+    if (oldestInBatch < startMs) break;
+    if (batch.length < pageSize) break;
+    skip += pageSize;
+  }
+
+  return results;
+}
+
 export async function fetchAllSolvedProblems(username) {
   const profileData = await fetchUserProfile(username);
   const total = profileData.stats.totalSolved || 0;
